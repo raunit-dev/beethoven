@@ -128,8 +128,8 @@ pub fn try_from_deposit_context<'info>(
 /// # Returns
 /// * `Ok(())` - Deposit executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
-pub fn deposit_signed<'info>(
-    accounts: &'info [AccountInfo],
+pub fn deposit_signed(
+    accounts: &[AccountInfo],
     amount: u64,
     signer_seeds: &[Signer]
 ) -> ProgramResult {
@@ -149,8 +149,8 @@ pub fn deposit_signed<'info>(
 /// # Returns
 /// * `Ok(())` - Deposit executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
-pub fn deposit<'info>(
-    accounts: &'info [AccountInfo],
+pub fn deposit(
+    accounts: &[AccountInfo],
     amount: u64,
 ) -> ProgramResult {
     deposit_signed(accounts, amount, &[])

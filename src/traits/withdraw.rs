@@ -108,8 +108,8 @@ pub fn try_from_withdraw_context<'info>(
 /// # Returns
 /// * `Ok(())` - Withdraw executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
-pub fn withdraw_signed<'info>(
-    accounts: &'info [AccountInfo],
+pub fn withdraw_signed(
+    accounts: &[AccountInfo],
     amount: u64,
     signer_seeds: &[Signer]
 ) -> ProgramResult {
@@ -129,8 +129,8 @@ pub fn withdraw_signed<'info>(
 /// # Returns
 /// * `Ok(())` - Withdraw executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
-pub fn withdraw<'info>(
-    accounts: &'info [AccountInfo],
+pub fn withdraw(
+    accounts: &[AccountInfo],
     amount: u64,
 ) -> ProgramResult {
     withdraw_signed(accounts, amount, &[])
