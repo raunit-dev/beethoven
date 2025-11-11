@@ -4,12 +4,16 @@ use pinocchio::{
     account_info::AccountInfo, cpi::invoke_signed, instruction::{AccountMeta, Instruction, Signer}, program_error::ProgramError, ProgramResult
 };
 
-use crate::Deposit;
+use crate::{Deposit, Withdraw};
 
-pub const KAMINO_LEND_PROGRAM_ID: [u8; 32] = [0u8; 32];
+pub const KAMINO_LEND_PROGRAM_ID: [u8; 32] = [
+    165, 146, 110, 167, 104, 28, 54, 37, 181, 151, 178, 217, 197, 192, 128,
+    165, 198, 190, 254, 36, 177, 157, 164, 151, 247, 134, 237, 58, 64, 172, 47, 188
+];
 const REFRESH_RESERVE_DISCRIMINATOR: [u8; 8] = [2, 218, 138, 235, 79, 201, 25, 102];
 const REFRESH_OBLIGATION_DISCRIMINATOR: [u8; 8] = [33, 132, 147, 228, 151, 192, 72, 89];
 const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] = [216, 224, 191, 27, 204, 151, 102, 175];
+const WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] = [202, 249, 117, 114, 231, 192, 47, 138];
 
 /// Kamino lending protocol integration
 pub struct Kamino;
@@ -336,5 +340,188 @@ impl<'info> Deposit<'info> for Kamino {
 
     fn deposit(ctx: &KaminoDepositAccounts<'info>, amount: u64) -> ProgramResult {
         Self::deposit_signed(ctx, amount, &[])
+    }
+}
+
+/// Account context for Kamino's WithdrawObligationCollateralV2 instruction.
+///
+/// This represents all accounts required for withdrawing collateral from a Kamino lending obligation.
+///
+/// # Account Order
+/// Accounts must be provided in the exact order listed below. The TryFrom implementation
+/// will validate that at least 13 accounts are present.
+pub struct KaminoWithdrawAccounts<'info> {
+    /// Kamino Lending Program
+    pub kamino_lending_program: &'info AccountInfo,
+    /// Owner of the obligation (must be signer and writable)
+    pub owner: &'info AccountInfo,
+    /// The obligation account to withdraw collateral from (writable)
+    pub obligation: &'info AccountInfo,
+    /// The lending market this operation belongs to
+    pub lending_market: &'info AccountInfo,
+    /// Lending market authority PDA
+    pub lending_market_authority: &'info AccountInfo,
+    /// The reserve account being withdrawn from (writable)
+    pub withdraw_reserve: &'info AccountInfo,
+    /// Reserve's source collateral account (writable)
+    pub reserve_source_collateral: &'info AccountInfo,
+    /// User's destination collateral account (writable)
+    pub user_destination_collateral: &'info AccountInfo,
+    /// Token program
+    pub token_program: &'info AccountInfo,
+    /// Sysvar Instructions account
+    pub instruction_sysvar_account: &'info AccountInfo,
+    /// Obligation's farm user state (writable, can be program ID if farms not used)
+    pub obligation_farm_user_state: &'info AccountInfo,
+    /// Reserve's farm state (writable, can be program ID if farms not used)
+    pub reserve_farm_state: &'info AccountInfo,
+    /// Farms program
+    pub farms_program: &'info AccountInfo,
+}
+
+impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
+    type Error = ProgramError;
+
+    /// Converts a slice of `AccountInfo` into validated `KaminoWithdrawAccounts`.
+    ///
+    /// # Arguments
+    /// * `accounts` - Slice containing at least 13 accounts in the correct order
+    ///
+    /// # Returns
+    /// * `Ok(KaminoWithdrawAccounts)` - Successfully parsed account context
+    /// * `Err(ProgramError::NotEnoughAccountKeys)` - Fewer than 13 accounts provided
+    ///
+    /// # Notes
+    /// * No upper bound is enforced - extra accounts are ignored (useful for `remaining_accounts`)
+    /// * Mutability and signer constraints are NOT validated here; Kamino's program will
+    ///   enforce them during CPI, providing clearer error messages
+    /// * The `..` pattern allows passing more than 13 accounts without error
+    fn try_from(accounts: &'info [AccountInfo]) -> Result<Self, Self::Error> {
+        // Require minimum of 13 accounts to prevent undefined behavior
+        if accounts.len() < 13 {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+
+        let [
+            kamino_lending_program,
+            owner,
+            obligation,
+            lending_market,
+            lending_market_authority,
+            withdraw_reserve,
+            reserve_source_collateral,
+            user_destination_collateral,
+            token_program,
+            instruction_sysvar_account,
+            obligation_farm_user_state,
+            reserve_farm_state,
+            farms_program,
+            ..
+        ] = accounts else {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        };
+
+        Ok(KaminoWithdrawAccounts {
+            kamino_lending_program,
+            owner,
+            obligation,
+            lending_market,
+            lending_market_authority,
+            withdraw_reserve,
+            reserve_source_collateral,
+            user_destination_collateral,
+            token_program,
+            instruction_sysvar_account,
+            obligation_farm_user_state,
+            reserve_farm_state,
+            farms_program,
+        })
+    }
+}
+
+impl<'info> Withdraw<'info> for Kamino {
+    type Accounts = KaminoWithdrawAccounts<'info>;
+
+    /// Executes a withdraw from Kamino lending protocol via CPI.
+    ///
+    /// This withdraws collateral tokens from a Kamino lending obligation,
+    /// allowing the user to reclaim their deposited assets.
+    ///
+    /// # Arguments
+    /// * `ctx` - Account context required for the withdraw (see `KaminoWithdrawAccounts`)
+    /// * `collateral_amount` - Amount of collateral tokens to withdraw
+    /// * `signer_seeds` - Optional PDA signer seeds for CPI with signing
+    ///
+    /// # Returns
+    /// * `Ok(())` - Withdraw completed successfully
+    /// * `Err(ProgramError)` - Invalid accounts or CPI failure
+    fn withdraw_signed(
+        ctx: &KaminoWithdrawAccounts<'info>,
+        collateral_amount: u64,
+        signer_seeds: &[Signer]
+    ) -> ProgramResult {
+        // Build account metas (12 accounts for the Kamino program)
+        let accounts = [
+            AccountMeta::writable_signer(ctx.owner.key()),
+            AccountMeta::writable(ctx.obligation.key()),
+            AccountMeta::readonly(ctx.lending_market.key()),
+            AccountMeta::readonly(ctx.lending_market_authority.key()),
+            AccountMeta::writable(ctx.withdraw_reserve.key()),
+            AccountMeta::writable(ctx.reserve_source_collateral.key()),
+            AccountMeta::writable(ctx.user_destination_collateral.key()),
+            AccountMeta::readonly(ctx.token_program.key()),
+            AccountMeta::readonly(ctx.instruction_sysvar_account.key()),
+            AccountMeta::writable(ctx.obligation_farm_user_state.key()),
+            AccountMeta::writable(ctx.reserve_farm_state.key()),
+            AccountMeta::readonly(ctx.farms_program.key()),
+        ];
+
+        // Build account infos (12 accounts for invoke_signed)
+        let account_infos = [
+            ctx.owner,
+            ctx.obligation,
+            ctx.lending_market,
+            ctx.lending_market_authority,
+            ctx.withdraw_reserve,
+            ctx.reserve_source_collateral,
+            ctx.user_destination_collateral,
+            ctx.token_program,
+            ctx.instruction_sysvar_account,
+            ctx.obligation_farm_user_state,
+            ctx.reserve_farm_state,
+            ctx.farms_program,
+        ];
+
+        // Build instruction data: discriminator (8 bytes) + collateral_amount (8 bytes)
+        let mut instruction_data = MaybeUninit::<[u8; 16]>::uninit();
+        unsafe {
+            let ptr = instruction_data.as_mut_ptr() as *mut u8;
+            core::ptr::copy_nonoverlapping(
+                WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR.as_ptr(),
+                ptr,
+                8,
+            );
+            core::ptr::copy_nonoverlapping(
+                collateral_amount.to_le_bytes().as_ptr(),
+                ptr.add(8),
+                8,
+            );
+        }
+
+        let withdraw_ix = Instruction {
+            program_id: &KAMINO_LEND_PROGRAM_ID,
+            accounts: &accounts,
+            data: unsafe {
+                core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16)
+            },
+        };
+
+        invoke_signed(&withdraw_ix, &account_infos, signer_seeds)?;
+
+        Ok(())
+    }
+
+    fn withdraw(ctx: &KaminoWithdrawAccounts<'info>, collateral_amount: u64) -> ProgramResult {
+        Self::withdraw_signed(ctx, collateral_amount, &[])
     }
 }

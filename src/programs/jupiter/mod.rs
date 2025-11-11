@@ -346,13 +346,13 @@ impl<'info> Withdraw<'info> for JupiterEarn {
     ///
     /// # Arguments
     /// * `ctx` - Account context required for the withdraw (see `JupiterEarnWithdrawAccounts`)
-    /// * `amount` - Amount of liquidity tokens to withdraw
+    /// * `collateral_amount` - Amount of collateral tokens to withdraw
     /// * `signer_seeds` - Optional PDA signer seeds for CPI with signing
     ///
     /// # Returns
     /// * `Ok(())` - Withdraw completed successfully
     /// * `Err(ProgramError)` - Invalid accounts or CPI failure
-    fn withdraw_signed(ctx: &JupiterEarnWithdrawAccounts<'info>, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
+    fn withdraw_signed(ctx: &JupiterEarnWithdrawAccounts<'info>, collateral_amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
 
         // Build account metas for the Jupiter Earn withdraw instruction
         let accounts = [
@@ -397,7 +397,7 @@ impl<'info> Withdraw<'info> for JupiterEarn {
             ctx.system_program,
         ];
 
-        // Build instruction data: discriminator (8 bytes) + amount (8 bytes)
+        // Build instruction data: discriminator (8 bytes) + collateral_amount (8 bytes)
         let mut instruction_data = MaybeUninit::<[u8; 16]>::uninit();
         unsafe {
             let ptr = instruction_data.as_mut_ptr() as *mut u8;
@@ -407,7 +407,7 @@ impl<'info> Withdraw<'info> for JupiterEarn {
                 8,
             );
             core::ptr::copy_nonoverlapping(
-                amount.to_le_bytes().as_ptr(),
+                collateral_amount.to_le_bytes().as_ptr(),
                 ptr.add(8),
                 8,
             );
@@ -428,7 +428,7 @@ impl<'info> Withdraw<'info> for JupiterEarn {
         Ok(())
     }
 
-    fn withdraw(ctx: &JupiterEarnWithdrawAccounts<'info>, amount: u64) -> ProgramResult {
-        Self::withdraw_signed(ctx, amount, &[])
+    fn withdraw(ctx: &JupiterEarnWithdrawAccounts<'info>, collateral_amount: u64) -> ProgramResult {
+        Self::withdraw_signed(ctx, collateral_amount, &[])
     }
 }

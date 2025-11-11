@@ -1,4 +1,9 @@
-use pinocchio::{instruction::Signer, program_error::ProgramError, account_info::AccountInfo, ProgramResult};
+use pinocchio::{
+    account_info::AccountInfo,
+    instruction::Signer,
+    program_error::ProgramError,
+    ProgramResult,
+};
 
 /// Core trait for withdraw operations across different protocols (Kamino, Jupiter, etc.)
 ///
@@ -12,16 +17,16 @@ pub trait Withdraw<'info> {
     ///
     /// # Arguments
     /// * `ctx` - Protocol-specific account context
-    /// * `amount` - Amount to withdraw
+    /// * `collateral_amount` - Amount of collateral to withdraw
     /// * `signer_seeds` - Seeds for PDA signing
-    fn withdraw_signed(ctx: &Self::Accounts, amount: u64, signer_seeds: &[Signer]) -> ProgramResult;
+    fn withdraw_signed(ctx: &Self::Accounts, collateral_amount: u64, signer_seeds: &[Signer]) -> ProgramResult;
 
     /// Execute a withdraw without signing (user is direct signer)
     ///
     /// # Arguments
     /// * `ctx` - Protocol-specific account context
-    /// * `amount` - Amount to withdraw
-    fn withdraw(ctx: &Self::Accounts, amount: u64) -> ProgramResult;
+    /// * `collateral_amount` - Amount of collateral to withdraw
+    fn withdraw(ctx: &Self::Accounts, collateral_amount: u64) -> ProgramResult;
 }
 
 /// Typed context for withdraw operations, discriminated by protocol.
@@ -32,22 +37,30 @@ pub trait Withdraw<'info> {
 pub enum WithdrawContext<'info> {
     #[cfg(feature = "jupiter")]
     Jupiter(crate::programs::jupiter::JupiterEarnWithdrawAccounts<'info>),
+
+    #[cfg(feature = "kamino")]
+    Kamino(crate::programs::kamino::KaminoWithdrawAccounts<'info>)
 }
 
 impl<'info> Withdraw<'info> for WithdrawContext<'info> {
     type Accounts = Self;
 
-    fn withdraw_signed(ctx: &Self::Accounts, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
+    fn withdraw_signed(ctx: &Self::Accounts, collateral_amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
         match ctx {
             #[cfg(feature = "jupiter")]
             WithdrawContext::Jupiter(jupiter_ctx) => {
-                crate::programs::jupiter::JupiterEarn::withdraw_signed(jupiter_ctx, amount, signer_seeds)
+                crate::programs::jupiter::JupiterEarn::withdraw_signed(jupiter_ctx, collateral_amount, signer_seeds)
+            }
+
+            #[cfg(feature = "kamino")]
+            WithdrawContext::Kamino(kamino_ctx) => {
+                crate::programs::kamino::Kamino::withdraw_signed(kamino_ctx, collateral_amount, signer_seeds)
             }
         }
     }
 
-    fn withdraw(ctx: &Self::Accounts, amount: u64) -> ProgramResult {
-        Self::withdraw_signed(ctx, amount, &[])
+    fn withdraw(ctx: &Self::Accounts, collateral_amount: u64) -> ProgramResult {
+        Self::withdraw_signed(ctx, collateral_amount, &[])
     }
 }
 
@@ -86,6 +99,12 @@ pub fn try_from_withdraw_context<'info>(
         .first()
         .ok_or(ProgramError::NotEnoughAccountKeys)?;
 
+    #[cfg(feature = "kamino")]
+    if detector_account.key().eq(&crate::programs::kamino::KAMINO_LEND_PROGRAM_ID) {
+        let ctx = crate::programs::kamino::KaminoWithdrawAccounts::try_from(accounts)?;
+        return Ok(WithdrawContext::Kamino(ctx));
+    }
+
     #[cfg(feature = "jupiter")]
     if detector_account.key().eq(&crate::programs::jupiter::JUPITER_EARN_PROGRAM_ID) {
         let ctx = crate::programs::jupiter::JupiterEarnWithdrawAccounts::try_from(accounts)?;
@@ -102,7 +121,7 @@ pub fn try_from_withdraw_context<'info>(
 ///
 /// # Arguments
 /// * `accounts` - Slice of accounts where the first account's owner determines the protocol
-/// * `amount` - Amount of tokens to withdraw
+/// * `collateral_amount` - Amount of collateral to withdraw
 /// * `signer_seeds` - Seeds for PDA signing
 ///
 /// # Returns
@@ -110,11 +129,11 @@ pub fn try_from_withdraw_context<'info>(
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
 pub fn withdraw_signed(
     accounts: &[AccountInfo],
-    amount: u64,
+    collateral_amount: u64,
     signer_seeds: &[Signer]
 ) -> ProgramResult {
     let ctx = try_from_withdraw_context(accounts)?;
-    WithdrawContext::withdraw_signed(&ctx, amount, signer_seeds)
+    WithdrawContext::withdraw_signed(&ctx, collateral_amount, signer_seeds)
 }
 
 /// Convenience function: Parses accounts, discriminates protocol, and executes withdraw.
@@ -124,14 +143,14 @@ pub fn withdraw_signed(
 ///
 /// # Arguments
 /// * `accounts` - Slice of accounts where the first account's owner determines the protocol
-/// * `amount` - Amount of tokens to withdraw
+/// * `collateral_amount` - Amount of collateral to withdraw
 ///
 /// # Returns
 /// * `Ok(())` - Withdraw executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
 pub fn withdraw(
     accounts: &[AccountInfo],
-    amount: u64,
+    collateral_amount: u64,
 ) -> ProgramResult {
-    withdraw_signed(accounts, amount, &[])
+    withdraw_signed(accounts, collateral_amount, &[])
 }
