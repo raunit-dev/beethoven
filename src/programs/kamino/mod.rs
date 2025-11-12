@@ -377,6 +377,10 @@ pub struct KaminoWithdrawAccounts<'info> {
     pub reserve_farm_state: &'info AccountInfo,
     /// Farms program
     pub farms_program: &'info AccountInfo,
+    /// Scope Oracle
+    pub scope_oracle: &'info AccountInfo,
+    /// Reserve Accounts
+    pub reserve_accounts: &'info [AccountInfo],
 }
 
 impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
@@ -385,20 +389,20 @@ impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
     /// Converts a slice of `AccountInfo` into validated `KaminoWithdrawAccounts`.
     ///
     /// # Arguments
-    /// * `accounts` - Slice containing at least 13 accounts in the correct order
+    /// * `accounts` - Slice containing at least 14 accounts in the correct order
     ///
     /// # Returns
     /// * `Ok(KaminoWithdrawAccounts)` - Successfully parsed account context
-    /// * `Err(ProgramError::NotEnoughAccountKeys)` - Fewer than 13 accounts provided
+    /// * `Err(ProgramError::NotEnoughAccountKeys)` - Fewer than 14 accounts provided
     ///
     /// # Notes
     /// * No upper bound is enforced - extra accounts are ignored (useful for `remaining_accounts`)
     /// * Mutability and signer constraints are NOT validated here; Kamino's program will
     ///   enforce them during CPI, providing clearer error messages
-    /// * The `..` pattern allows passing more than 13 accounts without error
+    /// * The `..` pattern allows passing more than 14 accounts without error
     fn try_from(accounts: &'info [AccountInfo]) -> Result<Self, Self::Error> {
-        // Require minimum of 13 accounts to prevent undefined behavior
-        if accounts.len() < 13 {
+        // Require minimum of 14 accounts to prevent undefined behavior
+        if accounts.len() < 14 {
             return Err(ProgramError::NotEnoughAccountKeys);
         }
 
@@ -416,10 +420,22 @@ impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
             obligation_farm_user_state,
             reserve_farm_state,
             farms_program,
-            ..
+            scope_oracle,
+            remaining_accounts @ ..,
         ] = accounts else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
+
+        // Similar to deposit, we assume all remaining accounts owned by Kamino are reserves
+        let mut total_reserve_accounts = 0;
+
+        for reserve in remaining_accounts {
+            if reserve.is_owned_by(&KAMINO_LEND_PROGRAM_ID) && total_reserve_accounts < 13 {
+                total_reserve_accounts += 1;
+            } else {
+                break;
+            }
+        }
 
         Ok(KaminoWithdrawAccounts {
             kamino_lending_program,
@@ -435,6 +451,8 @@ impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
             obligation_farm_user_state,
             reserve_farm_state,
             farms_program,
+            scope_oracle,
+            reserve_accounts: &remaining_accounts[..total_reserve_accounts],
         })
     }
 }
@@ -460,7 +478,101 @@ impl<'info> Withdraw<'info> for Kamino {
         collateral_amount: u64,
         signer_seeds: &[Signer]
     ) -> ProgramResult {
-        // Build account metas (12 accounts for the Kamino program)
+        // Refresh reserves
+        // - Start by refreshing the reserve we're withdrawing from
+        let accounts = [
+            AccountMeta::writable(ctx.withdraw_reserve.key()),
+            AccountMeta::readonly(ctx.kamino_lending_program.key()),
+            AccountMeta::readonly(ctx.kamino_lending_program.key()),
+            AccountMeta::readonly(ctx.kamino_lending_program.key()),
+            AccountMeta::readonly(ctx.scope_oracle.key()),
+        ];
+
+        let account_infos = [
+            ctx.withdraw_reserve,
+            ctx.kamino_lending_program,
+            ctx.kamino_lending_program,
+            ctx.kamino_lending_program,
+            ctx.scope_oracle,
+        ];
+
+        let instruction = Instruction {
+            program_id: &KAMINO_LEND_PROGRAM_ID,
+            accounts: &accounts,
+            data: &REFRESH_RESERVE_DISCRIMINATOR,
+        };
+
+        invoke_signed(&instruction, &account_infos, signer_seeds)?;
+
+        // - Now refresh all the other reserves (if any)
+        for reserve in ctx.reserve_accounts {
+            let accounts = [
+                AccountMeta::writable(reserve.key()),
+                AccountMeta::readonly(ctx.kamino_lending_program.key()),
+                AccountMeta::readonly(ctx.kamino_lending_program.key()),
+                AccountMeta::readonly(ctx.kamino_lending_program.key()),
+                AccountMeta::readonly(ctx.scope_oracle.key()),
+            ];
+
+            let account_infos = [
+                reserve,
+                ctx.kamino_lending_program,
+                ctx.kamino_lending_program,
+                ctx.kamino_lending_program,
+                ctx.scope_oracle,
+            ];
+
+            let instruction = Instruction {
+                program_id: &KAMINO_LEND_PROGRAM_ID,
+                accounts: &accounts,
+                data: &REFRESH_RESERVE_DISCRIMINATOR,
+            };
+
+            invoke_signed(&instruction, &account_infos, signer_seeds)?;
+        }
+
+        // Refresh obligation
+        const MAX_REFRESH_OBLIGATION_ACCOUNTS: usize = 15;
+
+        // Build account metas: obligation + lending_market + all reserves (up to 13)
+        let mut obligation_accounts = MaybeUninit::<[AccountMeta; MAX_REFRESH_OBLIGATION_ACCOUNTS]>::uninit();
+        let obligation_accounts_ptr = obligation_accounts.as_mut_ptr() as *mut AccountMeta;
+
+        unsafe {
+            // First account: writable obligation
+            core::ptr::write(obligation_accounts_ptr, AccountMeta::writable(ctx.obligation.key()));
+            // Second account: readonly lending_market
+            core::ptr::write(obligation_accounts_ptr.add(1), AccountMeta::readonly(ctx.lending_market.key()));
+
+            // Add all reserve accounts (read-only)
+            for (i, reserve) in ctx.reserve_accounts.iter().enumerate() {
+                core::ptr::write(obligation_accounts_ptr.add(2 + i), AccountMeta::readonly(reserve.key()));
+            }
+        }
+
+        let obligation_accounts_len = 2 + ctx.reserve_accounts.len();
+        let obligation_accounts_slice = unsafe {
+            core::slice::from_raw_parts(obligation_accounts_ptr, obligation_accounts_len)
+        };
+
+        // Build account infos: obligation + lending_market + all reserves
+        // Fill unused slots with obligation to avoid UB (invoke_signed is fine with extra accounts)
+        let mut obligation_account_infos = [ctx.obligation; MAX_REFRESH_OBLIGATION_ACCOUNTS];
+        obligation_account_infos[1] = ctx.lending_market;
+
+        for (i, reserve) in ctx.reserve_accounts.iter().enumerate() {
+            obligation_account_infos[2 + i] = reserve;
+        }
+
+        let instruction = Instruction {
+            program_id: &KAMINO_LEND_PROGRAM_ID,
+            accounts: obligation_accounts_slice,
+            data: &REFRESH_OBLIGATION_DISCRIMINATOR,
+        };
+
+        invoke_signed(&instruction, &obligation_account_infos, signer_seeds)?;
+
+        // Withdraw CPI
         let accounts = [
             AccountMeta::writable_signer(ctx.owner.key()),
             AccountMeta::writable(ctx.obligation.key()),
