@@ -1,19 +1,25 @@
 use core::mem::MaybeUninit;
 
 use pinocchio::{
-    account_info::AccountInfo, cpi::invoke_signed, instruction::{AccountMeta, Instruction, Signer}, program_error::ProgramError, ProgramResult
+    ProgramResult,
+    account_info::AccountInfo,
+    cpi::invoke_signed,
+    instruction::{AccountMeta, Instruction, Signer},
+    program_error::ProgramError,
 };
 
 use crate::{Deposit, Withdraw};
 
 pub const KAMINO_LEND_PROGRAM_ID: [u8; 32] = [
-    165, 146, 110, 167, 104, 28, 54, 37, 181, 151, 178, 217, 197, 192, 128,
-    165, 198, 190, 254, 36, 177, 157, 164, 151, 247, 134, 237, 58, 64, 172, 47, 188
+    165, 146, 110, 167, 104, 28, 54, 37, 181, 151, 178, 217, 197, 192, 128, 165, 198, 190, 254, 36,
+    177, 157, 164, 151, 247, 134, 237, 58, 64, 172, 47, 188,
 ];
 const REFRESH_RESERVE_DISCRIMINATOR: [u8; 8] = [2, 218, 138, 235, 79, 201, 25, 102];
 const REFRESH_OBLIGATION_DISCRIMINATOR: [u8; 8] = [33, 132, 147, 228, 151, 192, 72, 89];
-const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] = [216, 224, 191, 27, 204, 151, 102, 175];
-const WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] = [202, 249, 117, 114, 231, 192, 47, 138];
+const DEPOSIT_RESERVE_LIQUIDITY_AND_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] =
+    [216, 224, 191, 27, 204, 151, 102, 175];
+const WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] =
+    [202, 249, 117, 114, 231, 192, 47, 138];
 
 /// Kamino lending protocol integration
 pub struct Kamino;
@@ -113,7 +119,8 @@ impl<'info> TryFrom<&'info [AccountInfo]> for KaminoDepositAccounts<'info> {
             farms_program,
             scope_oracle,
             remaining_accounts @ ..,
-        ] = accounts else {
+        ] = accounts
+        else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
@@ -170,7 +177,11 @@ impl<'info> Deposit<'info> for Kamino {
     /// # Returns
     /// * `Ok(())` - Deposit completed successfully
     /// * `Err(ProgramError)` - Invalid accounts or CPI failure
-    fn deposit_signed(ctx: &KaminoDepositAccounts<'info>, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
+    fn deposit_signed(
+        ctx: &KaminoDepositAccounts<'info>,
+        amount: u64,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
         // Refresh reserves
         // - Start by the refreshing the reserve we're depositing into
         let accounts = [
@@ -196,7 +207,7 @@ impl<'info> Deposit<'info> for Kamino {
         };
 
         invoke_signed(&instruction, &account_infos, signer_seeds)?;
-        
+
         // - Now refresh all the other reserves (if any)
         for reserve in ctx.reserve_accounts {
             let accounts = [
@@ -214,13 +225,13 @@ impl<'info> Deposit<'info> for Kamino {
                 ctx.kamino_lending_program,
                 ctx.scope_oracle,
             ];
-    
+
             let instruction = Instruction {
                 program_id: &KAMINO_LEND_PROGRAM_ID,
                 accounts: &accounts,
                 data: &REFRESH_RESERVE_DISCRIMINATOR,
             };
-    
+
             invoke_signed(&instruction, &account_infos, signer_seeds)?;
         }
 
@@ -228,18 +239,28 @@ impl<'info> Deposit<'info> for Kamino {
         const MAX_REFRESH_OBLIGATION_ACCOUNTS: usize = 15;
 
         // Build account metas: obligation + lending_market + all reserves (up to 13)
-        let mut obligation_accounts = MaybeUninit::<[AccountMeta; MAX_REFRESH_OBLIGATION_ACCOUNTS]>::uninit();
+        let mut obligation_accounts =
+            MaybeUninit::<[AccountMeta; MAX_REFRESH_OBLIGATION_ACCOUNTS]>::uninit();
         let obligation_accounts_ptr = obligation_accounts.as_mut_ptr() as *mut AccountMeta;
 
         unsafe {
             // First account: writable obligation
-            core::ptr::write(obligation_accounts_ptr, AccountMeta::writable(ctx.obligation.key()));
+            core::ptr::write(
+                obligation_accounts_ptr,
+                AccountMeta::writable(ctx.obligation.key()),
+            );
             // Second account: readonly lending_market
-            core::ptr::write(obligation_accounts_ptr.add(1), AccountMeta::readonly(ctx.lending_market.key()));
+            core::ptr::write(
+                obligation_accounts_ptr.add(1),
+                AccountMeta::readonly(ctx.lending_market.key()),
+            );
 
             // Add all reserve accounts (read-only)
             for (i, reserve) in ctx.reserve_accounts.iter().enumerate() {
-                core::ptr::write(obligation_accounts_ptr.add(2 + i), AccountMeta::readonly(reserve.key()));
+                core::ptr::write(
+                    obligation_accounts_ptr.add(2 + i),
+                    AccountMeta::readonly(reserve.key()),
+                );
             }
         }
 
@@ -316,24 +337,18 @@ impl<'info> Deposit<'info> for Kamino {
                 ptr,
                 8,
             );
-            core::ptr::copy_nonoverlapping(
-                amount.to_le_bytes().as_ptr(),
-                ptr.add(8),
-                8,
-            );
+            core::ptr::copy_nonoverlapping(amount.to_le_bytes().as_ptr(), ptr.add(8), 8);
         }
 
         let deposit_ix = Instruction {
             program_id: &KAMINO_LEND_PROGRAM_ID,
             accounts: &accounts,
-            data: unsafe { core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16) },
+            data: unsafe {
+                core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16)
+            },
         };
 
-        invoke_signed(
-            &deposit_ix,
-            &account_infos,
-            signer_seeds,
-        )?;
+        invoke_signed(&deposit_ix, &account_infos, signer_seeds)?;
 
         Ok(())
     }
@@ -422,7 +437,8 @@ impl<'info> TryFrom<&'info [AccountInfo]> for KaminoWithdrawAccounts<'info> {
             farms_program,
             scope_oracle,
             remaining_accounts @ ..,
-        ] = accounts else {
+        ] = accounts
+        else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
@@ -476,7 +492,7 @@ impl<'info> Withdraw<'info> for Kamino {
     fn withdraw_signed(
         ctx: &KaminoWithdrawAccounts<'info>,
         collateral_amount: u64,
-        signer_seeds: &[Signer]
+        signer_seeds: &[Signer],
     ) -> ProgramResult {
         // Refresh reserves
         // - Start by refreshing the reserve we're withdrawing from
@@ -535,18 +551,28 @@ impl<'info> Withdraw<'info> for Kamino {
         const MAX_REFRESH_OBLIGATION_ACCOUNTS: usize = 15;
 
         // Build account metas: obligation + lending_market + all reserves (up to 13)
-        let mut obligation_accounts = MaybeUninit::<[AccountMeta; MAX_REFRESH_OBLIGATION_ACCOUNTS]>::uninit();
+        let mut obligation_accounts =
+            MaybeUninit::<[AccountMeta; MAX_REFRESH_OBLIGATION_ACCOUNTS]>::uninit();
         let obligation_accounts_ptr = obligation_accounts.as_mut_ptr() as *mut AccountMeta;
 
         unsafe {
             // First account: writable obligation
-            core::ptr::write(obligation_accounts_ptr, AccountMeta::writable(ctx.obligation.key()));
+            core::ptr::write(
+                obligation_accounts_ptr,
+                AccountMeta::writable(ctx.obligation.key()),
+            );
             // Second account: readonly lending_market
-            core::ptr::write(obligation_accounts_ptr.add(1), AccountMeta::readonly(ctx.lending_market.key()));
+            core::ptr::write(
+                obligation_accounts_ptr.add(1),
+                AccountMeta::readonly(ctx.lending_market.key()),
+            );
 
             // Add all reserve accounts (read-only)
             for (i, reserve) in ctx.reserve_accounts.iter().enumerate() {
-                core::ptr::write(obligation_accounts_ptr.add(2 + i), AccountMeta::readonly(reserve.key()));
+                core::ptr::write(
+                    obligation_accounts_ptr.add(2 + i),
+                    AccountMeta::readonly(reserve.key()),
+                );
             }
         }
 
@@ -613,11 +639,7 @@ impl<'info> Withdraw<'info> for Kamino {
                 ptr,
                 8,
             );
-            core::ptr::copy_nonoverlapping(
-                collateral_amount.to_le_bytes().as_ptr(),
-                ptr.add(8),
-                8,
-            );
+            core::ptr::copy_nonoverlapping(collateral_amount.to_le_bytes().as_ptr(), ptr.add(8), 8);
         }
 
         let withdraw_ix = Instruction {
