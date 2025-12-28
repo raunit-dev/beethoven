@@ -1,4 +1,7 @@
-use pinocchio::{instruction::Signer, program_error::ProgramError, account_info::AccountInfo, ProgramResult};
+use pinocchio::{
+    ProgramResult, account_info::AccountInfo, instruction::Signer, program_error::ProgramError,
+    pubkey::pubkey_eq,
+};
 
 /// Core trait for withdraw operations across different protocols (Kamino, Jupiter, etc.)
 ///
@@ -14,7 +17,8 @@ pub trait Withdraw<'info> {
     /// * `ctx` - Protocol-specific account context
     /// * `amount` - Amount to withdraw
     /// * `signer_seeds` - Seeds for PDA signing
-    fn withdraw_signed(ctx: &Self::Accounts, amount: u64, signer_seeds: &[Signer]) -> ProgramResult;
+    fn withdraw_signed(ctx: &Self::Accounts, amount: u64, signer_seeds: &[Signer])
+    -> ProgramResult;
 
     /// Execute a withdraw without signing (user is direct signer)
     ///
@@ -37,11 +41,19 @@ pub enum WithdrawContext<'info> {
 impl<'info> Withdraw<'info> for WithdrawContext<'info> {
     type Accounts = Self;
 
-    fn withdraw_signed(ctx: &Self::Accounts, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
+    fn withdraw_signed(
+        ctx: &Self::Accounts,
+        amount: u64,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
         match ctx {
             #[cfg(feature = "jupiter")]
             WithdrawContext::Jupiter(jupiter_ctx) => {
-                crate::programs::jupiter::JupiterEarn::withdraw_signed(jupiter_ctx, amount, signer_seeds)
+                crate::programs::jupiter::JupiterEarn::withdraw_signed(
+                    jupiter_ctx,
+                    amount,
+                    signer_seeds,
+                )
             }
         }
     }
@@ -80,14 +92,15 @@ impl<'info> Withdraw<'info> for WithdrawContext<'info> {
 /// WithdrawContext::withdraw(&ctx, amount)?;
 /// ```
 pub fn try_from_withdraw_context<'info>(
-    accounts: &'info [AccountInfo]
+    accounts: &'info [AccountInfo],
 ) -> Result<WithdrawContext<'info>, ProgramError> {
-    let detector_account = accounts
-        .first()
-        .ok_or(ProgramError::NotEnoughAccountKeys)?;
+    let detector_account = accounts.first().ok_or(ProgramError::NotEnoughAccountKeys)?;
 
     #[cfg(feature = "jupiter")]
-    if detector_account.key().eq(&crate::programs::jupiter::JUPITER_EARN_PROGRAM_ID) {
+    if pubkey_eq(
+        detector_account.key(),
+        &crate::programs::jupiter::JUPITER_EARN_PROGRAM_ID,
+    ) {
         let ctx = crate::programs::jupiter::JupiterEarnWithdrawAccounts::try_from(accounts)?;
         return Ok(WithdrawContext::Jupiter(ctx));
     }
@@ -111,7 +124,7 @@ pub fn try_from_withdraw_context<'info>(
 pub fn withdraw_signed(
     accounts: &[AccountInfo],
     amount: u64,
-    signer_seeds: &[Signer]
+    signer_seeds: &[Signer],
 ) -> ProgramResult {
     let ctx = try_from_withdraw_context(accounts)?;
     WithdrawContext::withdraw_signed(&ctx, amount, signer_seeds)
@@ -129,9 +142,6 @@ pub fn withdraw_signed(
 /// # Returns
 /// * `Ok(())` - Withdraw executed successfully
 /// * `Err(ProgramError)` - Parsing, discrimination, or CPI failed
-pub fn withdraw(
-    accounts: &[AccountInfo],
-    amount: u64,
-) -> ProgramResult {
+pub fn withdraw(accounts: &[AccountInfo], amount: u64) -> ProgramResult {
     withdraw_signed(accounts, amount, &[])
 }

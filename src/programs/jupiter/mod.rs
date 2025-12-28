@@ -1,15 +1,19 @@
 use core::mem::MaybeUninit;
 
 use pinocchio::{
-    account_info::AccountInfo, cpi::invoke_signed, instruction::{AccountMeta, Instruction, Signer}, program_error::ProgramError, ProgramResult
+    ProgramResult,
+    account_info::AccountInfo,
+    cpi::invoke_signed,
+    instruction::{AccountMeta, Instruction, Signer},
+    program_error::ProgramError,
 };
 
 use crate::{Deposit, Withdraw};
 
 // Jupiter Earn program ID: jup3YeL8QhtSx1e253b2FDvsMNC87fDrgQZivbrndc9
 pub const JUPITER_EARN_PROGRAM_ID: [u8; 32] = [
-    131, 233, 98, 217, 161, 25, 94, 125, 132, 113, 90, 89, 134, 24, 60, 117,
-    252, 181, 60, 164, 17, 131, 167, 203, 226, 180, 132, 24, 149, 204, 24, 194
+    10, 254, 27, 145, 46, 72, 94, 149, 253, 21, 235, 41, 55, 223, 252, 75, 55, 163, 22, 208, 166,
+    56, 18, 255, 2, 186, 73, 180, 198, 193, 141, 30,
 ];
 pub const DEPOSIT_DISCRIMINATOR: [u8; 8] = [242, 35, 198, 137, 82, 225, 242, 182];
 pub const WITHDRAW_DISCRIMINATOR: [u8; 8] = [183, 18, 70, 156, 148, 109, 161, 34];
@@ -99,8 +103,9 @@ impl<'info> TryFrom<&'info [AccountInfo]> for JupiterEarnDepositAccounts<'info> 
             token_program,
             associated_token_program,
             system_program,
-            ..
-        ] = accounts else {
+            ..,
+        ] = accounts
+        else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
@@ -143,8 +148,11 @@ impl<'info> Deposit<'info> for JupiterEarn {
     /// # Returns
     /// * `Ok(())` - Deposit completed successfully
     /// * `Err(ProgramError)` - Invalid accounts or CPI failure
-    fn deposit_signed(ctx: &JupiterEarnDepositAccounts<'info>, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
-
+    fn deposit_signed(
+        ctx: &JupiterEarnDepositAccounts<'info>,
+        amount: u64,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
         // Build account metas for the Jupiter Earn deposit instruction
         let accounts = [
             AccountMeta::writable_signer(ctx.signer.key()),
@@ -190,29 +198,19 @@ impl<'info> Deposit<'info> for JupiterEarn {
         let mut instruction_data = MaybeUninit::<[u8; 16]>::uninit();
         unsafe {
             let ptr = instruction_data.as_mut_ptr() as *mut u8;
-            core::ptr::copy_nonoverlapping(
-                DEPOSIT_DISCRIMINATOR.as_ptr(),
-                ptr,
-                8,
-            );
-            core::ptr::copy_nonoverlapping(
-                amount.to_le_bytes().as_ptr(),
-                ptr.add(8),
-                8,
-            );
+            core::ptr::copy_nonoverlapping(DEPOSIT_DISCRIMINATOR.as_ptr(), ptr, 8);
+            core::ptr::copy_nonoverlapping(amount.to_le_bytes().as_ptr(), ptr.add(8), 8);
         }
 
         let deposit_ix = Instruction {
             program_id: &JUPITER_EARN_PROGRAM_ID,
             accounts: &accounts,
-            data: unsafe { core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16) },
+            data: unsafe {
+                core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16)
+            },
         };
 
-        invoke_signed(
-            &deposit_ix,
-            &account_infos,
-            signer_seeds,
-        )?;
+        invoke_signed(&deposit_ix, &account_infos, signer_seeds)?;
 
         Ok(())
     }
@@ -307,8 +305,9 @@ impl<'info> TryFrom<&'info [AccountInfo]> for JupiterEarnWithdrawAccounts<'info>
             token_program,
             associated_token_program,
             system_program,
-            ..
-        ] = accounts else {
+            ..,
+        ] = accounts
+        else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
@@ -352,8 +351,11 @@ impl<'info> Withdraw<'info> for JupiterEarn {
     /// # Returns
     /// * `Ok(())` - Withdraw completed successfully
     /// * `Err(ProgramError)` - Invalid accounts or CPI failure
-    fn withdraw_signed(ctx: &JupiterEarnWithdrawAccounts<'info>, amount: u64, signer_seeds: &[Signer]) -> ProgramResult {
-
+    fn withdraw_signed(
+        ctx: &JupiterEarnWithdrawAccounts<'info>,
+        amount: u64,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
         // Build account metas for the Jupiter Earn withdraw instruction
         let accounts = [
             AccountMeta::writable_signer(ctx.signer.key()),
@@ -401,29 +403,19 @@ impl<'info> Withdraw<'info> for JupiterEarn {
         let mut instruction_data = MaybeUninit::<[u8; 16]>::uninit();
         unsafe {
             let ptr = instruction_data.as_mut_ptr() as *mut u8;
-            core::ptr::copy_nonoverlapping(
-                WITHDRAW_DISCRIMINATOR.as_ptr(),
-                ptr,
-                8,
-            );
-            core::ptr::copy_nonoverlapping(
-                amount.to_le_bytes().as_ptr(),
-                ptr.add(8),
-                8,
-            );
+            core::ptr::copy_nonoverlapping(WITHDRAW_DISCRIMINATOR.as_ptr(), ptr, 8);
+            core::ptr::copy_nonoverlapping(amount.to_le_bytes().as_ptr(), ptr.add(8), 8);
         }
 
         let withdraw_ix = Instruction {
             program_id: &JUPITER_EARN_PROGRAM_ID,
             accounts: &accounts,
-            data: unsafe { core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16) },
+            data: unsafe {
+                core::slice::from_raw_parts(instruction_data.as_ptr() as *const u8, 16)
+            },
         };
 
-        invoke_signed(
-            &withdraw_ix,
-            &account_infos,
-            signer_seeds,
-        )?;
+        invoke_signed(&withdraw_ix, &account_infos, signer_seeds)?;
 
         Ok(())
     }
