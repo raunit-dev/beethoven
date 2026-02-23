@@ -10,11 +10,12 @@ pub mod futarchy;
 #[cfg(feature = "gamma")]
 pub mod gamma;
 
-use solana_instruction::AccountMeta;
 use solana_pubkey::Pubkey;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
-use crate::error::ClientError;
+#[cfg(feature = "resolve")]
+use {
+    crate::error::ClientError, solana_instruction::AccountMeta,
+    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+};
 
 /// Top-level swap protocol selector.
 ///
@@ -53,6 +54,7 @@ pub struct SwapStep {
 ///
 /// Returns `(remaining_accounts, instruction_data)` ready for
 /// the Beethoven on-chain program.
+#[cfg(feature = "resolve")]
 pub async fn resolve_swap(
     rpc: &RpcClient,
     protocol: &SwapProtocol,
@@ -111,6 +113,7 @@ pub async fn resolve_swap(
 ///
 /// let (accounts, data) = resolve_swaps(&rpc, &steps, &user).await?;
 /// ```
+#[cfg(feature = "resolve")]
 pub async fn resolve_swaps(
     rpc: &RpcClient,
     steps: &[SwapStep],

@@ -1,8 +1,4 @@
-use solana_instruction::AccountMeta;
 use solana_pubkey::Pubkey;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
-use crate::error::ClientError;
 
 pub const ALDRIN_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("AMM55ShdkoGRB5jVYPjWziwk8m5MpwyDgsMWHaMSQWH6");
@@ -13,22 +9,32 @@ pub const ALDRIN_PROGRAM_ID: Pubkey =
 //         [32-byte quoteTokenMint] [32-byte poolSigner] [1-byte poolSignerNonce]
 //         [32-byte authority] [32-byte initializerAccount] [32-byte feeBaseAccount]
 //         [32-byte feeQuoteAccount] [32-byte feePoolTokenAccount] [Fees struct]
+#[cfg(feature = "resolve")]
 const OFFSET_POOL_MINT: usize = 40;
+#[cfg(feature = "resolve")]
 const OFFSET_BASE_TOKEN_VAULT: usize = 72;
+#[cfg(feature = "resolve")]
 const OFFSET_BASE_TOKEN_MINT: usize = 104;
+#[cfg(feature = "resolve")]
 const OFFSET_QUOTE_TOKEN_VAULT: usize = 136;
+#[cfg(feature = "resolve")]
 const OFFSET_QUOTE_TOKEN_MINT: usize = 168;
+#[cfg(feature = "resolve")]
 const OFFSET_POOL_SIGNER: usize = 200;
+#[cfg(feature = "resolve")]
 const OFFSET_FEE_POOL_TOKEN_ACCOUNT: usize = 361;
 
+#[cfg(feature = "resolve")]
 pub async fn resolve(
-    rpc: &RpcClient,
+    rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     pool: Option<&Pubkey>,
     side: u8,
     mint_a: &Pubkey,
     mint_b: &Pubkey,
     user: &Pubkey,
-) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
+) -> Result<(Vec<solana_instruction::AccountMeta>, Vec<u8>), crate::error::ClientError> {
+    use solana_instruction::AccountMeta;
+
     let (pool_pubkey, pool_data) = match pool {
         Some(addr) => {
             let account = rpc.get_account(addr).await?;

@@ -1,8 +1,4 @@
-use solana_instruction::AccountMeta;
-use solana_pubkey::Pubkey;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
-use crate::error::ClientError;
+use {solana_instruction::AccountMeta, solana_pubkey::Pubkey};
 
 pub const MANIFEST_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("MNFSTqtC93rEfYHB6hF82sKdZpUDFWkViLByLd1k1Ms");
@@ -12,9 +8,13 @@ pub const MANIFEST_PROGRAM_ID: Pubkey =
 //         [1-byte quote_mint_decimals] [1-byte base_vault_bump] [1-byte quote_vault_bump]
 //         [3-byte padding] [32-byte base_mint] [32-byte quote_mint]
 //         [32-byte base_vault] [32-byte quote_vault] ...
+#[cfg(feature = "resolve")]
 const OFFSET_BASE_MINT: usize = 16;
+#[cfg(feature = "resolve")]
 const OFFSET_QUOTE_MINT: usize = 48;
+#[cfg(feature = "resolve")]
 const OFFSET_BASE_VAULT: usize = 80;
+#[cfg(feature = "resolve")]
 const OFFSET_QUOTE_VAULT: usize = 112;
 
 /// Pre-resolved addresses for building a Manifest swap instruction offline.
@@ -63,14 +63,15 @@ pub fn build_extra_data(is_base_in: bool, is_exact_in: bool) -> Vec<u8> {
 ///
 /// `mint_a` is the input mint (what you're selling). `is_base_in` is inferred
 /// by comparing `mint_a` against the market's base mint.
+#[cfg(feature = "resolve")]
 pub async fn resolve(
-    rpc: &RpcClient,
+    rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     market: Option<&Pubkey>,
     is_exact_in: bool,
     mint_a: &Pubkey,
     mint_b: &Pubkey,
     user: &Pubkey,
-) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
+) -> Result<(Vec<AccountMeta>, Vec<u8>), crate::error::ClientError> {
     let (market_pubkey, market_data) = match market {
         Some(addr) => {
             let account = rpc.get_account(addr).await?;

@@ -1,8 +1,4 @@
-use solana_instruction::AccountMeta;
-use solana_pubkey::Pubkey;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
-use crate::error::ClientError;
+use {solana_instruction::AccountMeta, solana_pubkey::Pubkey};
 
 pub const GAMMA_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("GAMMA7meSFWaBXF25oSUgmGRwaW6sCMFLmBNiMSdbHVT");
@@ -12,11 +8,17 @@ pub const GAMMA_PROGRAM_ID: Pubkey =
 //         [32 token_0_vault] [32 token_1_vault] [32 lp_mint]
 //         [32 token_0_mint] [32 token_1_mint] [32 token_0_program]
 //         [32 token_1_program] [32 observation_key] ...
+#[cfg(feature = "resolve")]
 const OFFSET_AMM_CONFIG: usize = 8;
+#[cfg(feature = "resolve")]
 const OFFSET_TOKEN_VAULT_0: usize = 72;
+#[cfg(feature = "resolve")]
 const OFFSET_TOKEN_VAULT_1: usize = 104;
+#[cfg(feature = "resolve")]
 const OFFSET_TOKEN_MINT_0: usize = 168;
+#[cfg(feature = "resolve")]
 const OFFSET_TOKEN_MINT_1: usize = 200;
+#[cfg(feature = "resolve")]
 const OFFSET_OBSERVATION_KEY: usize = 296;
 
 /// Pre-resolved addresses for building a Gamma swap instruction offline.
@@ -62,13 +64,14 @@ pub fn build_extra_data() -> Vec<u8> {
 }
 
 /// Resolve accounts and data for a Gamma swap via RPC.
+#[cfg(feature = "resolve")]
 pub async fn resolve(
-    rpc: &RpcClient,
+    rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     pool: Option<&Pubkey>,
     mint_a: &Pubkey,
     mint_b: &Pubkey,
     user: &Pubkey,
-) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
+) -> Result<(Vec<AccountMeta>, Vec<u8>), crate::error::ClientError> {
     let (pool_pubkey, pool_data) = match pool {
         Some(addr) => {
             let account = rpc.get_account(addr).await?;
@@ -100,7 +103,7 @@ pub async fn resolve(
     } else if *mint_a == token_mint_1 {
         (token_vault_1, token_vault_0, token_mint_1, token_mint_0)
     } else {
-        return Err(ClientError::MintMismatch {
+        return Err(crate::error::ClientError::MintMismatch {
             expected: format!("{} or {}", token_mint_0, token_mint_1),
             got: mint_a.to_string(),
         });

@@ -1,8 +1,12 @@
 pub mod error;
 pub mod swap;
 
-pub use error::ClientError;
-pub use swap::{resolve_swap, resolve_swaps, SwapProtocol, SwapStep};
+#[cfg(feature = "resolve")]
+pub use swap::{resolve_swap, resolve_swaps};
+pub use {
+    error::ClientError,
+    swap::{SwapProtocol, SwapStep},
+};
 
 /// Helper to get the associated token account address.
 pub fn get_associated_token_address(
@@ -41,6 +45,7 @@ pub const ASSOCIATED_TOKEN_PROGRAM_ID: solana_pubkey::Pubkey =
     solana_pubkey::Pubkey::from_str_const("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
 /// Determine which token program owns a mint by checking the account owner.
+#[cfg(feature = "resolve")]
 pub async fn get_token_program_for_mint(
     rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     mint: &solana_pubkey::Pubkey,
@@ -63,15 +68,18 @@ pub async fn get_token_program_for_mint(
 /// contain each pubkey at its respective byte offset.
 ///
 /// Returns `(account_pubkey, account_data)` for the first match.
+#[cfg(feature = "resolve")]
 pub async fn discover_pool(
     rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     program_id: &solana_pubkey::Pubkey,
     filters: &[(usize, &solana_pubkey::Pubkey)],
 ) -> Result<(solana_pubkey::Pubkey, solana_account::Account), ClientError> {
-    use solana_account_decoder_client_types::UiAccountEncoding;
-    use solana_rpc_client_api::{
-        config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-        filter::{Memcmp, RpcFilterType},
+    use {
+        solana_account_decoder_client_types::UiAccountEncoding,
+        solana_rpc_client_api::{
+            config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+            filter::{Memcmp, RpcFilterType},
+        },
     };
 
     let rpc_filters: Vec<RpcFilterType> = filters
@@ -111,6 +119,7 @@ pub async fn discover_pool(
 /// `offset_a` / `offset_b` are the byte offsets in the pool account data where
 /// the two mint pubkeys are stored. Tries `(mint_a @ offset_a, mint_b @ offset_b)`
 /// first, then `(mint_b @ offset_a, mint_a @ offset_b)` if no match.
+#[cfg(feature = "resolve")]
 pub async fn discover_pool_with_flip(
     rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     program_id: &solana_pubkey::Pubkey,

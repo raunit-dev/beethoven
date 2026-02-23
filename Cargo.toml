@@ -96,7 +96,7 @@ solana-compute-budget-instruction = "3.1.7"
 spl-token-interface = "2"
 mollusk-svm = "0.10.1"
 mollusk-svm-programs-token = "0.10.1"
-beethoven-client = { path = "crates/client", features = ["manifest", "gamma"] }
+beethoven-client = { path = "crates/client", features = ["manifest", "gamma", "resolve"] }
 solana-rpc-client = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 

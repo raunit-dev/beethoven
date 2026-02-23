@@ -18,6 +18,7 @@ pub enum ClientError {
     MintMismatch { expected: String, got: String },
 }
 
+#[cfg(feature = "resolve")]
 impl From<solana_rpc_client_api::client_error::Error> for ClientError {
     fn from(e: solana_rpc_client_api::client_error::Error) -> Self {
         ClientError::Rpc(e.to_string())

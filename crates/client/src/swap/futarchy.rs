@@ -1,8 +1,6 @@
-use solana_instruction::AccountMeta;
-use solana_pubkey::Pubkey;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
+#[cfg(feature = "resolve")]
 use crate::error::ClientError;
+use solana_pubkey::Pubkey;
 
 pub const FUTARCHY_PROGRAM_ID: Pubkey =
     Pubkey::from_str_const("FUTARELBfJfQ8RDGhg1wdhddq1odMAJUePHFuBYfUxKq");
@@ -21,9 +19,12 @@ pub const FUTARCHY_PROGRAM_ID: Pubkey =
 // TwapOracle = u128 + i64 + i64 + u128 + u128 + u128 + u128 + u32 = 100 bytes
 //
 // After PoolState comes totalLiquidity (u128, 16 bytes), then the Pubkeys.
+#[cfg(feature = "resolve")]
 const POOL_STATE_TAG_OFFSET: usize = 8;
+#[cfg(feature = "resolve")]
 const POOL_SIZE: usize = 132;
 
+#[cfg(feature = "resolve")]
 fn compute_amm_field_offsets(
     pool_state_variant: u8,
 ) -> Result<(usize, usize, usize, usize), ClientError> {
@@ -51,14 +52,17 @@ fn compute_amm_field_offsets(
     ))
 }
 
+#[cfg(feature = "resolve")]
 pub async fn resolve(
-    rpc: &RpcClient,
+    rpc: &solana_rpc_client::nonblocking::rpc_client::RpcClient,
     dao: Option<&Pubkey>,
     swap_type: u8,
     _mint_a: &Pubkey,
     _mint_b: &Pubkey,
     user: &Pubkey,
-) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
+) -> Result<(Vec<solana_instruction::AccountMeta>, Vec<u8>), ClientError> {
+    use solana_instruction::AccountMeta;
+
     // Futarchy requires an explicit DAO address — the embedded PoolState enum
     // makes getProgramAccounts with fixed memcmp offsets impractical.
     let dao_pubkey = dao.ok_or(ClientError::InvalidAccountData(
