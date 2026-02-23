@@ -34,6 +34,12 @@ pub enum SwapContext<'info> {
 
     #[cfg(feature = "gamma-swap")]
     Gamma(crate::gamma::GammaSwapAccounts<'info>),
+
+    #[cfg(feature = "scale_amm-swap")]
+    ScaleAmm(crate::scale_amm::ScaleAmmSwapAccounts<'info>),
+
+    #[cfg(feature = "scale_vmm-swap")]
+    ScaleVmm(crate::scale_vmm::ScaleVmmSwapAccounts<'info>),
 }
 
 /// Protocol-specific swap data enum for use with SwapContext
@@ -64,6 +70,12 @@ pub enum SwapData<'a> {
 
     #[cfg(feature = "gamma-swap")]
     Gamma(()),
+
+    #[cfg(feature = "scale_amm-swap")]
+    ScaleAmm(crate::scale_amm::ScaleAmmSwapData),
+
+    #[cfg(feature = "scale_vmm-swap")]
+    ScaleVmm(crate::scale_vmm::ScaleVmmSwapData),
 }
 
 impl<'a> SwapContext<'a> {
@@ -177,6 +189,32 @@ impl<'a> SwapContext<'a> {
             #[cfg(feature = "gamma-swap")]
             SwapContext::Gamma(_) => Ok((SwapData::Gamma(()), data)),
 
+            #[cfg(feature = "scale_amm-swap")]
+            SwapContext::ScaleAmm(_) => {
+                let n = crate::scale_amm::ScaleAmmSwapData::DATA_LEN;
+                if data.len() < n {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+                let (mine, rest) = data.split_at(n);
+                Ok((
+                    SwapData::ScaleAmm(crate::scale_amm::ScaleAmmSwapData::try_from(mine)?),
+                    rest,
+                ))
+            }
+
+            #[cfg(feature = "scale_vmm-swap")]
+            SwapContext::ScaleVmm(_) => {
+                let n = crate::scale_vmm::ScaleVmmSwapData::DATA_LEN;
+                if data.len() < n {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+                let (mine, rest) = data.split_at(n);
+                Ok((
+                    SwapData::ScaleVmm(crate::scale_vmm::ScaleVmmSwapData::try_from(mine)?),
+                    rest,
+                ))
+            }
+
             #[allow(unreachable_patterns)]
             _ => Err(ProgramError::InvalidAccountData),
         }
@@ -288,6 +326,28 @@ impl<'a> Swap<'a> for SwapContext<'a> {
                     in_amount,
                     minimum_out_amount,
                     &(),
+                    signer_seeds,
+                )
+            }
+
+            #[cfg(feature = "scale_amm-swap")]
+            (SwapContext::ScaleAmm(accounts), SwapData::ScaleAmm(d)) => {
+                crate::scale_amm::ScaleAmm::swap_signed(
+                    accounts,
+                    in_amount,
+                    minimum_out_amount,
+                    d,
+                    signer_seeds,
+                )
+            }
+
+            #[cfg(feature = "scale_vmm-swap")]
+            (SwapContext::ScaleVmm(accounts), SwapData::ScaleVmm(d)) => {
+                crate::scale_vmm::ScaleVmm::swap_signed(
+                    accounts,
+                    in_amount,
+                    minimum_out_amount,
+                    d,
                     signer_seeds,
                 )
             }
@@ -432,6 +492,34 @@ pub fn try_from_swap_context<'info>(
         let (mine, rest) = accounts.split_at(n);
         let ctx = crate::gamma::GammaSwapAccounts::try_from(mine)?;
         return Ok((SwapContext::Gamma(ctx), rest));
+    }
+
+    #[cfg(feature = "scale_amm-swap")]
+    if address_eq(
+        detector_account.address(),
+        &crate::scale_amm::SCALE_AMM_PROGRAM_ID,
+    ) {
+        let n = crate::scale_amm::ScaleAmmSwapAccounts::NUM_ACCOUNTS;
+        if accounts.len() < n {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+        let (mine, rest) = accounts.split_at(n);
+        let ctx = crate::scale_amm::ScaleAmmSwapAccounts::try_from(mine)?;
+        return Ok((SwapContext::ScaleAmm(ctx), rest));
+    }
+
+    #[cfg(feature = "scale_vmm-swap")]
+    if address_eq(
+        detector_account.address(),
+        &crate::scale_vmm::SCALE_VMM_PROGRAM_ID,
+    ) {
+        let n = crate::scale_vmm::ScaleVmmSwapAccounts::NUM_ACCOUNTS;
+        if accounts.len() < n {
+            return Err(ProgramError::NotEnoughAccountKeys);
+        }
+        let (mine, rest) = accounts.split_at(n);
+        let ctx = crate::scale_vmm::ScaleVmmSwapAccounts::try_from(mine)?;
+        return Ok((SwapContext::ScaleVmm(ctx), rest));
     }
 
     Err(ProgramError::InvalidAccountData)
