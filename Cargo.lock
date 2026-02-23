@@ -564,6 +564,8 @@ dependencies = [
  "beethoven-swap-heaven",
  "beethoven-swap-manifest",
  "beethoven-swap-perena",
+ "beethoven-swap-scale-amm",
+ "beethoven-swap-scale-vmm",
  "beethoven-swap-solfi",
  "beethoven-swap-solfi-v2",
  "litesvm",
@@ -702,6 +704,28 @@ dependencies = [
 
 [[package]]
 name = "beethoven-swap-perena"
+version = "0.0.1"
+dependencies = [
+ "beethoven-core",
+ "solana-account-view",
+ "solana-address 2.0.0",
+ "solana-instruction-view",
+ "solana-program-error",
+]
+
+[[package]]
+name = "beethoven-swap-scale-amm"
+version = "0.0.1"
+dependencies = [
+ "beethoven-core",
+ "solana-account-view",
+ "solana-address 2.0.0",
+ "solana-instruction-view",
+ "solana-program-error",
+]
+
+[[package]]
+name = "beethoven-swap-scale-vmm"
 version = "0.0.1"
 dependencies = [
  "beethoven-core",
