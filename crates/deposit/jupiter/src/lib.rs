@@ -12,7 +12,10 @@ use {
     solana_program_error::{ProgramError, ProgramResult},
 };
 
-pub const JUPITER_EARN_PROGRAM_ID: Address = Address::new_from_array([0u8; 32]);
+pub const JUPITER_EARN_PROGRAM_ID: Address = Address::new_from_array([
+    10, 254, 27, 145, 46, 72, 94, 149, 253, 21, 235, 41, 55, 223, 252, 75, 55, 163, 22, 208, 166,
+    56, 18, 255, 2, 186, 73, 180, 198, 193, 141, 30,
+]);
 pub const DEPOSIT_DISCRIMINATOR: [u8; 8] = [242, 35, 198, 137, 82, 225, 242, 182];
 
 pub struct JupiterEarn;
