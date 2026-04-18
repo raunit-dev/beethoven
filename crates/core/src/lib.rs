@@ -52,3 +52,25 @@ pub trait Deposit<'info> {
     /// Execute a deposit without signing (user is direct signer)
     fn deposit(ctx: &Self::Accounts, amount: u64, data: &Self::Data) -> ProgramResult;
 }
+
+/// Core trait for withdraw operations across different protocols.
+///
+/// Each protocol implements this trait with its specific account requirements and CPI logic.
+pub trait Withdraw<'info> {
+    /// Protocol-specific accounts required for the withdraw CPI
+    type Accounts;
+
+    /// Protocol-specific instruction data beyond amount
+    type Data;
+
+    /// Execute a withdraw with PDA signing capability
+    fn withdraw_signed(
+        ctx: &Self::Accounts,
+        amount: u64,
+        data: &Self::Data,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult;
+
+    /// Execute a withdraw without signing (user is direct signer)
+    fn withdraw(ctx: &Self::Accounts, amount: u64, data: &Self::Data) -> ProgramResult;
+}

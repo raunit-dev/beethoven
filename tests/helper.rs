@@ -41,6 +41,7 @@ pub mod discriminator {
     pub const DEPOSIT: u8 = 0;
     pub const SWAP: u8 = 1;
     pub const MULTI_SWAP: u8 = 2;
+    pub const WITHDRAW: u8 = 3;
 }
 
 // =============================================================================
@@ -280,6 +281,22 @@ pub fn build_deposit_instruction(
     extra_data: &[u8],
 ) -> Instruction {
     let mut data = vec![discriminator::DEPOSIT];
+    data.extend_from_slice(&amount.to_le_bytes());
+    data.extend_from_slice(extra_data);
+
+    Instruction {
+        program_id: TEST_PROGRAM_ID,
+        accounts,
+        data,
+    }
+}
+
+pub fn build_withdraw_instruction(
+    accounts: Vec<AccountMeta>,
+    amount: u64,
+    extra_data: &[u8],
+) -> Instruction {
+    let mut data = vec![discriminator::WITHDRAW];
     data.extend_from_slice(&amount.to_le_bytes());
     data.extend_from_slice(extra_data);
 

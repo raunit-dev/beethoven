@@ -8,43 +8,38 @@ use {
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
 };
 
-/// Top-level deposit protocol selector.
-///
-/// Each variant carries the protocol-specific config needed to resolve the
-/// exact accounts and extra data for a Beethoven deposit instruction.
-pub enum DepositProtocol {
+/// Top-level withdraw protocol selector.
+pub enum WithdrawProtocol {
     #[cfg(feature = "marginfi")]
     Marginfi {
         bank: Address,
         marginfi_account: Address,
-        signer_token_account: Address,
-        deposit_up_to_limit: Option<bool>,
+        destination_token_account: Address,
+        withdraw_all: Option<bool>,
     },
 }
 
-/// Resolve accounts and data for a deposit protocol.
-///
-/// Returns `(accounts, extra_data)` ready for the Beethoven on-chain program.
+/// Resolve accounts and data for a withdraw protocol.
 #[cfg(feature = "resolve")]
-pub async fn resolve_deposit(
+pub async fn resolve_withdraw(
     rpc: &RpcClient,
-    protocol: &DepositProtocol,
+    protocol: &WithdrawProtocol,
     user: &Address,
 ) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
     match protocol {
         #[cfg(feature = "marginfi")]
-        DepositProtocol::Marginfi {
+        WithdrawProtocol::Marginfi {
             bank,
             marginfi_account,
-            signer_token_account,
-            deposit_up_to_limit,
+            destination_token_account,
+            withdraw_all,
         } => {
             marginfi::resolve(
                 rpc,
                 bank,
                 marginfi_account,
-                signer_token_account,
-                *deposit_up_to_limit,
+                destination_token_account,
+                *withdraw_all,
                 user,
             )
             .await

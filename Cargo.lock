@@ -573,6 +573,7 @@ dependencies = [
  "beethoven-swap-scale-vmm",
  "beethoven-swap-solfi",
  "beethoven-swap-solfi-v2",
+ "beethoven-withdraw-marginfi",
  "litesvm",
  "mollusk-svm",
  "mollusk-svm-programs-token",
@@ -824,6 +825,17 @@ dependencies = [
  "beethoven",
  "pinocchio",
  "solana-define-syscall 4.0.1",
+]
+
+[[package]]
+name = "beethoven-withdraw-marginfi"
+version = "0.0.1"
+dependencies = [
+ "beethoven-core",
+ "solana-account-view",
+ "solana-address 2.6.0",
+ "solana-instruction-view",
+ "solana-program-error",
 ]
 
 [[package]]

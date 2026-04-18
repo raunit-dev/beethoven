@@ -6,6 +6,7 @@ use pinocchio::{error::ProgramError, AccountView, Address, ProgramResult};
 mod deposit;
 mod multi_swap;
 mod swap;
+mod withdraw;
 
 pinocchio::no_allocator!();
 pinocchio::nostd_panic_handler!();
@@ -25,6 +26,7 @@ pub fn process_instruction(
         0 => deposit::process(accounts, data),
         1 => swap::process(accounts, data),
         2 => multi_swap::process(accounts, data),
+        3 => withdraw::process(accounts, data),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }

@@ -1,7 +1,7 @@
 #![no_std]
 
 use {
-    beethoven_core::Deposit,
+    beethoven_core::Withdraw,
     core::mem::MaybeUninit,
     solana_account_view::AccountView,
     solana_address::Address,
@@ -16,20 +16,35 @@ pub const MARGINFI_PROGRAM_ID: Address = Address::new_from_array([
     5, 48, 122, 214, 69, 75, 188, 94, 30, 78, 146, 5, 146, 83, 161, 139, 184, 200, 134, 140, 88,
     166, 49, 46, 200, 106, 57, 230, 34, 78, 55, 59,
 ]);
-pub const LENDING_ACCOUNT_DEPOSIT_DISCRIMINATOR: [u8; 8] = [171, 94, 235, 103, 82, 64, 212, 140];
-pub const DEPOSIT_DATA_LEN: usize = 18;
+pub const LENDING_ACCOUNT_WITHDRAW_DISCRIMINATOR: [u8; 8] = [36, 72, 74, 19, 210, 210, 192, 192];
+pub const WITHDRAW_DATA_LEN: usize = 18;
+const FIXED_ACCOUNTS_LEN: usize = 8;
+// `solana-instruction-view` currently caps static CPI account arrays at 64,
+// so this adapter can only forward up to 56 trailing remaining accounts.
+//
+// This is likely workable for normal native-marginfi withdraws: marginfi
+// accounts can hold up to 16 balances, and withdraw/borrow risk checks
+// require passing all balance banks plus their oracle accounts in
+// `remaining_accounts`. In practice that is often on the order of
+// 16 * (bank + 1-2 oracle accounts) = 32-48 trailing accounts.
+//
+// Sources:
+// - https://github.com/mrgnlabs/marginfi-v2
+// - https://docs.marginfi.com/mfi-v2
+const MAX_REMAINING_ACCOUNTS: usize = 56;
+const MAX_TOTAL_ACCOUNTS: usize = FIXED_ACCOUNTS_LEN + MAX_REMAINING_ACCOUNTS;
 
 pub struct Marginfi;
 
-pub struct MarginfiDepositData {
-    pub deposit_up_to_limit: Option<bool>,
+pub struct MarginfiWithdrawData {
+    pub withdraw_all: Option<bool>,
 }
 
-impl MarginfiDepositData {
+impl MarginfiWithdrawData {
     pub const DATA_LEN: usize = 2;
 }
 
-impl TryFrom<&[u8]> for MarginfiDepositData {
+impl TryFrom<&[u8]> for MarginfiWithdrawData {
     type Error = ProgramError;
 
     fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
@@ -38,7 +53,7 @@ impl TryFrom<&[u8]> for MarginfiDepositData {
         }
 
         Ok(Self {
-            deposit_up_to_limit: match data[0] {
+            withdraw_all: match data[0] {
                 0 => None,
                 1 => Some(match data[1] {
                     0 => false,
@@ -51,35 +66,37 @@ impl TryFrom<&[u8]> for MarginfiDepositData {
     }
 }
 
-pub struct MarginfiDepositAccounts<'info> {
+pub struct MarginfiWithdrawAccounts<'info> {
     pub marginfi_program: &'info AccountView,
     pub group: &'info AccountView,
     pub marginfi_account: &'info AccountView,
     pub authority: &'info AccountView,
     pub bank: &'info AccountView,
-    pub signer_token_account: &'info AccountView,
+    pub destination_token_account: &'info AccountView,
+    pub bank_liquidity_vault_authority: &'info AccountView,
     pub liquidity_vault: &'info AccountView,
     pub token_program: &'info AccountView,
     pub remaining_accounts: &'info [AccountView],
 }
 
-impl<'info> TryFrom<&'info [AccountView]> for MarginfiDepositAccounts<'info> {
+impl<'info> TryFrom<&'info [AccountView]> for MarginfiWithdrawAccounts<'info> {
     type Error = ProgramError;
 
     fn try_from(accounts: &'info [AccountView]) -> Result<Self, Self::Error> {
-        let [marginfi_program, group, marginfi_account, authority, bank, signer_token_account, liquidity_vault, token_program, remaining_accounts @ ..] =
+        let [marginfi_program, group, marginfi_account, authority, bank, destination_token_account, bank_liquidity_vault_authority, liquidity_vault, token_program, remaining_accounts @ ..] =
             accounts
         else {
             return Err(ProgramError::NotEnoughAccountKeys);
         };
 
-        Ok(MarginfiDepositAccounts {
+        Ok(MarginfiWithdrawAccounts {
             marginfi_program,
             group,
             marginfi_account,
             authority,
             bank,
-            signer_token_account,
+            destination_token_account,
+            bank_liquidity_vault_authority,
             liquidity_vault,
             token_program,
             remaining_accounts,
@@ -87,20 +104,33 @@ impl<'info> TryFrom<&'info [AccountView]> for MarginfiDepositAccounts<'info> {
     }
 }
 
-impl<'info> Deposit<'info> for Marginfi {
-    type Accounts = MarginfiDepositAccounts<'info>;
-    type Data = MarginfiDepositData;
+#[inline(never)]
+fn invoke_marginfi_withdraw<'info>(
+    accounts: &[InstructionAccount<'_>],
+    account_infos: &[&'info AccountView],
+    instruction_data: &[u8],
+    signer_seeds: &[Signer],
+) -> ProgramResult {
+    let withdraw_ix = InstructionView {
+        program_id: &MARGINFI_PROGRAM_ID,
+        accounts,
+        data: instruction_data,
+    };
 
-    fn deposit_signed(
-        ctx: &MarginfiDepositAccounts<'info>,
+    invoke_signed_with_bounds::<MAX_TOTAL_ACCOUNTS>(&withdraw_ix, account_infos, signer_seeds)
+}
+
+impl<'info> Withdraw<'info> for Marginfi {
+    type Accounts = MarginfiWithdrawAccounts<'info>;
+    type Data = MarginfiWithdrawData;
+
+    #[inline(never)]
+    fn withdraw_signed(
+        ctx: &MarginfiWithdrawAccounts<'info>,
         amount: u64,
         data: &Self::Data,
         signer_seeds: &[Signer],
     ) -> ProgramResult {
-        const FIXED_ACCOUNTS_LEN: usize = 7;
-        const MAX_REMAINING_ACCOUNTS: usize = 8;
-        const MAX_TOTAL_ACCOUNTS: usize = FIXED_ACCOUNTS_LEN + MAX_REMAINING_ACCOUNTS;
-
         if ctx.remaining_accounts.len() > MAX_REMAINING_ACCOUNTS {
             return Err(ProgramError::InvalidInstructionData);
         }
@@ -127,21 +157,25 @@ impl<'info> Deposit<'info> for Marginfi {
             );
             core::ptr::write(
                 accounts_ptr.add(4),
-                InstructionAccount::writable(ctx.signer_token_account.address()),
+                InstructionAccount::writable(ctx.destination_token_account.address()),
             );
             core::ptr::write(
                 accounts_ptr.add(5),
-                InstructionAccount::writable(ctx.liquidity_vault.address()),
+                InstructionAccount::readonly(ctx.bank_liquidity_vault_authority.address()),
             );
             core::ptr::write(
                 accounts_ptr.add(6),
+                InstructionAccount::writable(ctx.liquidity_vault.address()),
+            );
+            core::ptr::write(
+                accounts_ptr.add(7),
                 InstructionAccount::readonly(ctx.token_program.address()),
             );
 
             for (i, account) in ctx.remaining_accounts.iter().enumerate() {
                 core::ptr::write(
                     accounts_ptr.add(FIXED_ACCOUNTS_LEN + i),
-                    InstructionAccount::readonly(account.address()),
+                    InstructionAccount::from(account),
                 );
             }
         }
@@ -153,9 +187,10 @@ impl<'info> Deposit<'info> for Marginfi {
         account_infos[1] = ctx.marginfi_account;
         account_infos[2] = ctx.authority;
         account_infos[3] = ctx.bank;
-        account_infos[4] = ctx.signer_token_account;
-        account_infos[5] = ctx.liquidity_vault;
-        account_infos[6] = ctx.token_program;
+        account_infos[4] = ctx.destination_token_account;
+        account_infos[5] = ctx.bank_liquidity_vault_authority;
+        account_infos[6] = ctx.liquidity_vault;
+        account_infos[7] = ctx.token_program;
 
         for (i, account) in ctx.remaining_accounts.iter().enumerate() {
             account_infos[FIXED_ACCOUNTS_LEN + i] = account;
@@ -163,12 +198,12 @@ impl<'info> Deposit<'info> for Marginfi {
 
         let account_infos = &account_infos[..total_accounts_len];
 
-        let mut instruction_data = MaybeUninit::<[u8; DEPOSIT_DATA_LEN]>::uninit();
+        let mut instruction_data = MaybeUninit::<[u8; WITHDRAW_DATA_LEN]>::uninit();
         unsafe {
             let ptr = instruction_data.as_mut_ptr() as *mut u8;
-            core::ptr::copy_nonoverlapping(LENDING_ACCOUNT_DEPOSIT_DISCRIMINATOR.as_ptr(), ptr, 8);
+            core::ptr::copy_nonoverlapping(LENDING_ACCOUNT_WITHDRAW_DISCRIMINATOR.as_ptr(), ptr, 8);
             core::ptr::copy_nonoverlapping(amount.to_le_bytes().as_ptr(), ptr.add(8), 8);
-            match data.deposit_up_to_limit {
+            match data.withdraw_all {
                 None => {
                     *ptr.add(16) = 0;
                     *ptr.add(17) = 0;
@@ -180,23 +215,21 @@ impl<'info> Deposit<'info> for Marginfi {
             }
         }
 
-        let deposit_ix = InstructionView {
-            program_id: &MARGINFI_PROGRAM_ID,
+        invoke_marginfi_withdraw(
             accounts,
-            data: unsafe { instruction_data.assume_init_ref() },
-        };
-
-        invoke_signed_with_bounds::<MAX_TOTAL_ACCOUNTS>(&deposit_ix, account_infos, signer_seeds)?;
-
-        Ok(())
+            account_infos,
+            unsafe { instruction_data.assume_init_ref() },
+            signer_seeds,
+        )
     }
 
-    fn deposit(
-        ctx: &MarginfiDepositAccounts<'info>,
+    #[inline(never)]
+    fn withdraw(
+        ctx: &MarginfiWithdrawAccounts<'info>,
         amount: u64,
         data: &Self::Data,
     ) -> ProgramResult {
-        Self::deposit_signed(ctx, amount, data, &[])
+        Self::withdraw_signed(ctx, amount, data, &[])
     }
 }
 
@@ -205,20 +238,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_marginfi_deposit_data_option_bool() {
-        let none = MarginfiDepositData::try_from(&[0, 0][..]).unwrap();
-        assert_eq!(none.deposit_up_to_limit, None);
+    fn parse_marginfi_withdraw_data_option_bool() {
+        let none = MarginfiWithdrawData::try_from(&[0, 0][..]).unwrap();
+        assert_eq!(none.withdraw_all, None);
 
-        let some_false = MarginfiDepositData::try_from(&[1, 0][..]).unwrap();
-        assert_eq!(some_false.deposit_up_to_limit, Some(false));
+        let some_false = MarginfiWithdrawData::try_from(&[1, 0][..]).unwrap();
+        assert_eq!(some_false.withdraw_all, Some(false));
 
-        let some_true = MarginfiDepositData::try_from(&[1, 1][..]).unwrap();
-        assert_eq!(some_true.deposit_up_to_limit, Some(true));
+        let some_true = MarginfiWithdrawData::try_from(&[1, 1][..]).unwrap();
+        assert_eq!(some_true.withdraw_all, Some(true));
     }
 
     #[test]
     fn reject_invalid_option_bool_payload() {
-        assert!(MarginfiDepositData::try_from(&[2, 0][..]).is_err());
-        assert!(MarginfiDepositData::try_from(&[1, 2][..]).is_err());
+        assert!(MarginfiWithdrawData::try_from(&[2, 0][..]).is_err());
+        assert!(MarginfiWithdrawData::try_from(&[1, 2][..]).is_err());
     }
 }

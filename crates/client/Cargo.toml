@@ -1,12 +1,12 @@
 [package]
 name = "beethoven-client"
-description = "Client-side helper for composing Beethoven swap and deposit instructions"
+description = "Client-side helper for composing Beethoven swap, deposit, and withdraw instructions"
 version = "0.0.1"
 license = "MIT"
 edition = "2021"
 
 [features]
-default = ["swap", "deposit", "resolve"]
+default = ["swap", "deposit", "withdraw", "resolve"]
 
 swap = [
     "manifest",
@@ -18,7 +18,8 @@ swap = [
     "raydium_cpmm",
 ]
 
-deposit = []
+deposit = ["marginfi"]
+withdraw = ["marginfi"]
 
 resolve = [
     "dep:solana-rpc-client",
@@ -34,6 +35,7 @@ gamma = []
 omnipair = []
 hadron = []
 raydium_cpmm = []
+marginfi = []
 
 [dependencies]
 solana-address = { version = "2", features = ["curve25519"] }

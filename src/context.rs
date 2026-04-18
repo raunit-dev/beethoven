@@ -612,8 +612,8 @@ pub fn swap(
     swap_signed(accounts, in_amount, minimum_out_amount, data, &[])
 }
 
-// Deposit context - similar pattern
-use crate::Deposit;
+// Deposit / withdraw contexts - similar pattern
+use crate::{Deposit, Withdraw};
 
 pub enum DepositContext<'info> {
     #[cfg(feature = "kamino-deposit")]
@@ -660,10 +660,19 @@ impl<'a> DepositContext<'a> {
             )),
 
             #[cfg(feature = "marginfi-deposit")]
-            DepositContext::Marginfi(_) => Ok((
-                DepositData::Marginfi(crate::marginfi::MarginfiDepositData::try_from(data)?),
-                &[],
-            )),
+            DepositContext::Marginfi(_) => {
+                let data_len = crate::marginfi::MarginfiDepositData::DATA_LEN;
+                if data.len() < data_len {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+
+                Ok((
+                    DepositData::Marginfi(crate::marginfi::MarginfiDepositData::try_from(
+                        &data[..data_len],
+                    )?),
+                    &data[data_len..],
+                ))
+            }
 
             #[allow(unreachable_patterns)]
             _ => Err(ProgramError::InvalidAccountData),
@@ -756,6 +765,96 @@ pub fn try_from_deposit_context<'info>(
     ) {
         let ctx = crate::marginfi::MarginfiDepositAccounts::try_from(accounts)?;
         return Ok(DepositContext::Marginfi(ctx));
+    }
+
+    Err(ProgramError::InvalidAccountData)
+}
+
+pub enum WithdrawContext<'info> {
+    #[cfg(feature = "marginfi-withdraw")]
+    Marginfi(crate::marginfi_withdraw::MarginfiWithdrawAccounts<'info>),
+}
+
+pub enum WithdrawData {
+    #[cfg(feature = "marginfi-withdraw")]
+    Marginfi(crate::marginfi_withdraw::MarginfiWithdrawData),
+}
+
+impl<'a> WithdrawContext<'a> {
+    pub fn try_from_withdraw_data(
+        &self,
+        data: &'a [u8],
+    ) -> Result<(WithdrawData, &'a [u8]), ProgramError> {
+        match self {
+            #[cfg(feature = "marginfi-withdraw")]
+            WithdrawContext::Marginfi(_) => {
+                let data_len = crate::marginfi_withdraw::MarginfiWithdrawData::DATA_LEN;
+                if data.len() < data_len {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+
+                Ok((
+                    WithdrawData::Marginfi(
+                        crate::marginfi_withdraw::MarginfiWithdrawData::try_from(
+                            &data[..data_len],
+                        )?,
+                    ),
+                    &data[data_len..],
+                ))
+            }
+
+            #[allow(unreachable_patterns)]
+            _ => Err(ProgramError::InvalidAccountData),
+        }
+    }
+}
+
+impl<'info> Withdraw<'info> for WithdrawContext<'info> {
+    type Accounts = Self;
+    type Data = WithdrawData;
+
+    #[inline(never)]
+    fn withdraw_signed(
+        ctx: &Self::Accounts,
+        amount: u64,
+        data: &Self::Data,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
+        match ctx {
+            #[cfg(feature = "marginfi-withdraw")]
+            WithdrawContext::Marginfi(accounts) => {
+                let WithdrawData::Marginfi(data) = data;
+                crate::marginfi_withdraw::Marginfi::withdraw_signed(
+                    accounts,
+                    amount,
+                    data,
+                    signer_seeds,
+                )
+            }
+
+            #[allow(unreachable_patterns)]
+            _ => Err(ProgramError::InvalidAccountData),
+        }
+    }
+
+    #[inline(never)]
+    fn withdraw(ctx: &Self::Accounts, amount: u64, data: &Self::Data) -> ProgramResult {
+        Self::withdraw_signed(ctx, amount, data, &[])
+    }
+}
+
+pub fn try_from_withdraw_context<'info>(
+    accounts: &'info [AccountView],
+) -> Result<WithdrawContext<'info>, ProgramError> {
+    let detector_account = accounts.first().ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+    #[cfg(feature = "marginfi-withdraw")]
+    if address_eq(
+        detector_account.address(),
+        &crate::marginfi_withdraw::MARGINFI_PROGRAM_ID,
+    ) {
+        let ctx = crate::marginfi_withdraw::MarginfiWithdrawAccounts::try_from(accounts)?;
+        return Ok(WithdrawContext::Marginfi(ctx));
     }
 
     Err(ProgramError::InvalidAccountData)
