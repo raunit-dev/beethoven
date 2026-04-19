@@ -3,14 +3,19 @@ use solana_address::Address;
 pub mod deposit;
 pub mod error;
 pub mod swap;
+pub mod withdraw;
 
 #[cfg(feature = "resolve")]
 pub use deposit::resolve_deposit;
 #[cfg(feature = "resolve")]
 pub use swap::{resolve_swap, resolve_swaps};
+#[cfg(feature = "resolve")]
+pub use withdraw::resolve_withdraw;
 pub use {
+    deposit::DepositProtocol,
     error::ClientError,
     swap::{SwapProtocol, SwapStep},
+    withdraw::WithdrawProtocol,
 };
 
 /// Helper to get the associated token account address.

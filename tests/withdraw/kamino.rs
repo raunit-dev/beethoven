@@ -1,5 +1,5 @@
 use {
-    beethoven::{try_from_deposit_context, DepositContext, DepositData},
+    beethoven::{try_from_withdraw_context, WithdrawContext, WithdrawData},
     solana_account_view::{AccountView, RuntimeAccount, NOT_BORROWED},
     solana_address::Address,
     solana_program_error::ProgramError,
@@ -32,10 +32,10 @@ fn build_kamino_accounts(
 ) -> (Vec<Vec<u64>>, Vec<AccountView>, Vec<Address>) {
     let total_accounts = 22
         + refresh_reserve_group_count
-            * beethoven::kamino::KaminoDepositData::REFRESH_RESERVE_GROUP_ACCOUNTS_LEN;
+            * beethoven::kamino_withdraw::KaminoWithdrawData::REFRESH_RESERVE_GROUP_ACCOUNTS_LEN;
     let total_accounts = total_accounts + obligation_tail_count;
     let mut addresses = Vec::with_capacity(total_accounts);
-    addresses.push(beethoven::kamino::KAMINO_LEND_PROGRAM_ID);
+    addresses.push(beethoven::kamino_withdraw::KAMINO_LEND_PROGRAM_ID);
     for i in 1..total_accounts {
         addresses.push(Address::new_from_array([i as u8; 32]));
     }
@@ -53,10 +53,11 @@ fn build_kamino_accounts(
 }
 
 #[test]
-fn kamino_deposit_accounts_try_from_keeps_refresh_tail() {
+fn kamino_withdraw_accounts_try_from_keeps_refresh_tail() {
     let (_storage, accounts, addresses) = build_kamino_accounts(2, 4);
 
-    let ctx = beethoven::kamino::KaminoDepositAccounts::try_from(accounts.as_slice()).unwrap();
+    let ctx =
+        beethoven::kamino_withdraw::KaminoWithdrawAccounts::try_from(accounts.as_slice()).unwrap();
 
     assert_eq!(ctx.kamino_lending_program.address(), &addresses[0]);
     assert_eq!(ctx.owner.address(), &addresses[1]);
@@ -68,10 +69,10 @@ fn kamino_deposit_accounts_try_from_keeps_refresh_tail() {
 }
 
 #[test]
-fn kamino_deposit_accounts_try_from_requires_fixed_accounts() {
+fn kamino_withdraw_accounts_try_from_requires_fixed_accounts() {
     let (_storage, accounts, _) = build_kamino_accounts(0, 0);
 
-    let err = match beethoven::kamino::KaminoDepositAccounts::try_from(&accounts[..21]) {
+    let err = match beethoven::kamino_withdraw::KaminoWithdrawAccounts::try_from(&accounts[..21]) {
         Ok(_) => panic!("expected NotEnoughAccountKeys"),
         Err(err) => err,
     };
@@ -79,38 +80,34 @@ fn kamino_deposit_accounts_try_from_requires_fixed_accounts() {
 }
 
 #[test]
-fn try_from_deposit_context_selects_kamino() {
+fn try_from_withdraw_context_selects_kamino() {
     let (_storage, accounts, _) = build_kamino_accounts(1, 0);
 
-    let ctx = try_from_deposit_context(accounts.as_slice()).unwrap();
-    assert!(matches!(ctx, DepositContext::Kamino(_)));
+    let ctx = try_from_withdraw_context(accounts.as_slice()).unwrap();
+    assert!(matches!(ctx, WithdrawContext::Kamino(_)));
 }
 
 #[test]
-fn kamino_context_try_from_deposit_data_parses_counts_and_rest() {
+fn kamino_context_try_from_withdraw_data_parses_counts_and_rest() {
     let (_storage, accounts, _) = build_kamino_accounts(1, 0);
-    let ctx = try_from_deposit_context(accounts.as_slice()).unwrap();
+    let ctx = try_from_withdraw_context(accounts.as_slice()).unwrap();
 
-    let (deposit_data, rest) = ctx.try_from_deposit_data(&[2, 3, 1, 1, 99, 100]).unwrap();
+    let (withdraw_data, rest) = ctx.try_from_withdraw_data(&[2, 3, 1, 1, 99, 100]).unwrap();
     assert_eq!(rest, &[99, 100]);
 
-    match deposit_data {
-        DepositData::Kamino(data) => {
-            assert_eq!(data.refresh_reserve_group_count, 2);
-            assert_eq!(data.deposit_reserve_count, 3);
-            assert_eq!(data.borrow_reserve_count, 1);
-            assert_eq!(data.borrow_referrer_token_state_count, 1);
-        }
-        _ => panic!("expected Kamino deposit data"),
-    }
+    let WithdrawData::Kamino(data) = withdraw_data;
+    assert_eq!(data.refresh_reserve_group_count, 2);
+    assert_eq!(data.deposit_reserve_count, 3);
+    assert_eq!(data.borrow_reserve_count, 1);
+    assert_eq!(data.borrow_referrer_token_state_count, 1);
 }
 
 #[test]
-fn kamino_context_try_from_deposit_data_rejects_invalid_count() {
+fn kamino_context_try_from_withdraw_data_rejects_invalid_count() {
     let (_storage, accounts, _) = build_kamino_accounts(0, 0);
-    let ctx = try_from_deposit_context(accounts.as_slice()).unwrap();
+    let ctx = try_from_withdraw_context(accounts.as_slice()).unwrap();
 
-    let err = match ctx.try_from_deposit_data(&[0, 0, 1, 2]) {
+    let err = match ctx.try_from_withdraw_data(&[0, 0, 1, 2]) {
         Ok(_) => panic!("expected InvalidInstructionData"),
         Err(err) => err,
     };

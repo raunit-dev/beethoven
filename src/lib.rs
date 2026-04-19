@@ -1,7 +1,7 @@
 #![no_std]
 
 // Re-export core traits
-pub use beethoven_core::{Deposit, Swap};
+pub use beethoven_core::{Deposit, Swap, Withdraw};
 #[cfg(feature = "drift-deposit")]
 pub use beethoven_deposit_drift as drift;
 #[cfg(feature = "jupiter-deposit")]
@@ -39,6 +39,8 @@ pub use beethoven_swap_scale_vmm as scale_vmm;
 pub use beethoven_swap_solfi as solfi;
 #[cfg(feature = "solfi_v2-swap")]
 pub use beethoven_swap_solfi_v2 as solfi_v2;
+#[cfg(feature = "kamino-withdraw")]
+pub use beethoven_withdraw_kamino as kamino_withdraw;
 
 // Context enums and convenience functions
 mod context;

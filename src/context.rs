@@ -612,8 +612,8 @@ pub fn swap(
     swap_signed(accounts, in_amount, minimum_out_amount, data, &[])
 }
 
-// Deposit context - similar pattern
-use crate::Deposit;
+// Deposit / withdraw contexts - similar pattern
+use crate::{Deposit, Withdraw};
 
 pub enum DepositContext<'info> {
     #[cfg(feature = "kamino-deposit")]
@@ -632,7 +632,7 @@ pub enum DepositContext<'info> {
 /// Protocol-specific deposit data enum for use with DepositContext
 pub enum DepositData {
     #[cfg(feature = "kamino-deposit")]
-    Kamino(()),
+    Kamino(crate::kamino::KaminoDepositData),
     #[cfg(feature = "jupiter-deposit")]
     Jupiter(()),
     #[cfg(feature = "drift-deposit")]
@@ -648,7 +648,19 @@ impl<'a> DepositContext<'a> {
     ) -> Result<(DepositData, &'a [u8]), ProgramError> {
         match self {
             #[cfg(feature = "kamino-deposit")]
-            DepositContext::Kamino(_) => Ok((DepositData::Kamino(()), &[])),
+            DepositContext::Kamino(_) => {
+                let data_len = crate::kamino::KaminoDepositData::DATA_LEN;
+                if data.len() < data_len {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+
+                Ok((
+                    DepositData::Kamino(crate::kamino::KaminoDepositData::try_from(
+                        &data[..data_len],
+                    )?),
+                    &data[data_len..],
+                ))
+            }
 
             #[cfg(feature = "jupiter-deposit")]
             DepositContext::Jupiter(_) => Ok((DepositData::Jupiter(()), &[])),
@@ -684,7 +696,11 @@ impl<'info> Deposit<'info> for DepositContext<'info> {
         match ctx {
             #[cfg(feature = "kamino-deposit")]
             DepositContext::Kamino(accounts) => {
-                crate::kamino::Kamino::deposit_signed(accounts, amount, &(), signer_seeds)
+                if let DepositData::Kamino(data) = data {
+                    crate::kamino::Kamino::deposit_signed(accounts, amount, data, signer_seeds)
+                } else {
+                    Err(ProgramError::InvalidInstructionData)
+                }
             }
 
             #[cfg(feature = "jupiter-deposit")]
@@ -756,6 +772,92 @@ pub fn try_from_deposit_context<'info>(
     ) {
         let ctx = crate::marginfi::MarginfiDepositAccounts::try_from(accounts)?;
         return Ok(DepositContext::Marginfi(ctx));
+    }
+
+    Err(ProgramError::InvalidAccountData)
+}
+
+pub enum WithdrawContext<'info> {
+    #[cfg(feature = "kamino-withdraw")]
+    Kamino(crate::kamino_withdraw::KaminoWithdrawAccounts<'info>),
+}
+
+pub enum WithdrawData {
+    #[cfg(feature = "kamino-withdraw")]
+    Kamino(crate::kamino_withdraw::KaminoWithdrawData),
+}
+
+impl<'a> WithdrawContext<'a> {
+    pub fn try_from_withdraw_data(
+        &self,
+        data: &'a [u8],
+    ) -> Result<(WithdrawData, &'a [u8]), ProgramError> {
+        match self {
+            #[cfg(feature = "kamino-withdraw")]
+            WithdrawContext::Kamino(_) => {
+                let data_len = crate::kamino_withdraw::KaminoWithdrawData::DATA_LEN;
+                if data.len() < data_len {
+                    return Err(ProgramError::InvalidInstructionData);
+                }
+
+                Ok((
+                    WithdrawData::Kamino(crate::kamino_withdraw::KaminoWithdrawData::try_from(
+                        &data[..data_len],
+                    )?),
+                    &data[data_len..],
+                ))
+            }
+
+            #[allow(unreachable_patterns)]
+            _ => Err(ProgramError::InvalidAccountData),
+        }
+    }
+}
+
+impl<'info> Withdraw<'info> for WithdrawContext<'info> {
+    type Accounts = Self;
+    type Data = WithdrawData;
+
+    fn withdraw_signed(
+        ctx: &Self::Accounts,
+        amount: u64,
+        data: &Self::Data,
+        signer_seeds: &[Signer],
+    ) -> ProgramResult {
+        match ctx {
+            #[cfg(feature = "kamino-withdraw")]
+            WithdrawContext::Kamino(accounts) => {
+                let WithdrawData::Kamino(data) = data;
+                crate::kamino_withdraw::Kamino::withdraw_signed(
+                    accounts,
+                    amount,
+                    data,
+                    signer_seeds,
+                )
+            }
+
+            #[allow(unreachable_patterns)]
+            _ => Err(ProgramError::InvalidAccountData),
+        }
+    }
+
+    fn withdraw(ctx: &Self::Accounts, amount: u64, data: &Self::Data) -> ProgramResult {
+        Self::withdraw_signed(ctx, amount, data, &[])
+    }
+}
+
+pub fn try_from_withdraw_context<'info>(
+    accounts: &'info [AccountView],
+) -> Result<WithdrawContext<'info>, ProgramError> {
+    let detector_account = accounts.first().ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+    #[cfg(feature = "kamino-withdraw")]
+    if address_eq(
+        detector_account.address(),
+        &crate::kamino_withdraw::KAMINO_LEND_PROGRAM_ID,
+    ) {
+        let ctx = crate::kamino_withdraw::KaminoWithdrawAccounts::try_from(accounts)?;
+        return Ok(WithdrawContext::Kamino(ctx));
     }
 
     Err(ProgramError::InvalidAccountData)

@@ -573,6 +573,7 @@ dependencies = [
  "beethoven-swap-scale-vmm",
  "beethoven-swap-solfi",
  "beethoven-swap-solfi-v2",
+ "beethoven-withdraw-kamino",
  "litesvm",
  "mollusk-svm",
  "mollusk-svm-programs-token",
@@ -601,6 +602,7 @@ dependencies = [
 name = "beethoven-client"
 version = "0.0.1"
 dependencies = [
+ "borsh",
  "solana-account",
  "solana-account-decoder-client-types",
  "solana-address 2.6.0",
@@ -824,6 +826,17 @@ dependencies = [
  "beethoven",
  "pinocchio",
  "solana-define-syscall 4.0.1",
+]
+
+[[package]]
+name = "beethoven-withdraw-kamino"
+version = "0.0.1"
+dependencies = [
+ "beethoven-core",
+ "solana-account-view",
+ "solana-address 2.6.0",
+ "solana-instruction-view",
+ "solana-program-error",
 ]
 
 [[package]]

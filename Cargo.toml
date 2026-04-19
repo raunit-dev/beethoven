@@ -6,13 +6,14 @@ license = "MIT"
 edition = "2021"
 
 [features]
-default = ["deposit", "swap"]
+default = ["deposit", "withdraw", "swap"]
 
 # Test program selection (for dev-dependencies)
 upstream-bpf = []
 
 # Action groups
 deposit = ["kamino-deposit", "jupiter-deposit", "drift-deposit", "marginfi-deposit"]
+withdraw = ["kamino-withdraw"]
 swap = [
     "perena-swap",
     "solfi-swap",
@@ -35,6 +36,9 @@ kamino-deposit = ["dep:beethoven-deposit-kamino"]
 jupiter-deposit = ["dep:beethoven-deposit-jupiter"]
 drift-deposit = ["dep:beethoven-deposit-drift"]
 marginfi-deposit = ["dep:beethoven-deposit-marginfi"]
+
+# Withdraw protocols
+kamino-withdraw = ["dep:beethoven-withdraw-kamino"]
 
 # Swap protocols
 perena-swap = ["dep:beethoven-swap-perena"]
@@ -64,6 +68,7 @@ beethoven-deposit-kamino = { path = "crates/deposit/kamino", optional = true }
 beethoven-deposit-jupiter = { path = "crates/deposit/jupiter", optional = true }
 beethoven-deposit-drift = { path = "crates/deposit/drift", optional = true }
 beethoven-deposit-marginfi = { path = "crates/deposit/marginfi", optional = true }
+beethoven-withdraw-kamino = { path = "crates/withdraw/kamino", optional = true }
 beethoven-swap-perena = { path = "crates/swap/perena", optional = true }
 beethoven-swap-solfi = { path = "crates/swap/solfi", optional = true }
 beethoven-swap-solfi-v2 = { path = "crates/swap/solfi-v2", optional = true }
@@ -86,6 +91,7 @@ members = [
     "crates/deposit/jupiter",
     "crates/deposit/drift",
     "crates/deposit/marginfi",
+    "crates/withdraw/kamino",
     "crates/swap/perena",
     "crates/swap/solfi",
     "crates/swap/solfi-v2",

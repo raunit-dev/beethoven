@@ -1,28 +1,41 @@
-#[cfg(feature = "resolve")]
-use crate::ClientError;
-#[cfg(feature = "resolve")]
+#[cfg(feature = "kamino")]
+pub mod kamino;
+
 use solana_address::Address;
 #[cfg(feature = "resolve")]
-use solana_instruction::AccountMeta;
-#[cfg(feature = "resolve")]
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use {
+    crate::error::ClientError, solana_instruction::AccountMeta,
+    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+};
 
 /// Top-level deposit protocol selector.
 ///
-/// Each variant carries the protocol-specific config and data needed
-/// to resolve accounts. When `pool`/`market` is `None`, the resolver
-/// discovers it via `getProgramAccounts` with memcmp filters on the mints.
-pub enum DepositProtocol {}
+/// Each variant carries the protocol-specific config needed to resolve the
+/// exact accounts and extra data for a Beethoven deposit instruction.
+pub enum DepositProtocol {
+    #[cfg(feature = "kamino")]
+    Kamino {
+        reserve: Address,
+        obligation: Address,
+        user_source_liquidity: Address,
+    },
+}
 
 /// Resolve accounts and data for a deposit protocol.
 ///
-/// Returns `(remaining_accounts, instruction_data)` ready for
-/// the Beethoven on-chain program.
-/// #[cfg(feature = "resolve")]
+/// Returns `(accounts, extra_data)` ready for the Beethoven on-chain program.
+#[cfg(feature = "resolve")]
 pub async fn resolve_deposit(
-    _rpc: &RpcClient,
-    _protocol: &DepositProtocol,
-    _user: &Address,
+    rpc: &RpcClient,
+    protocol: &DepositProtocol,
+    user: &Address,
 ) -> Result<(Vec<AccountMeta>, Vec<u8>), ClientError> {
-    todo!()
+    match protocol {
+        #[cfg(feature = "kamino")]
+        DepositProtocol::Kamino {
+            reserve,
+            obligation,
+            user_source_liquidity,
+        } => kamino::resolve(rpc, reserve, obligation, user_source_liquidity, user).await,
+    }
 }
